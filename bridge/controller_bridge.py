@@ -310,22 +310,96 @@ class LinuxGamepadState:
         self.sThumbRY = 0
 
 
+IGNORE_DEVICE_NAME_SUBSTRINGS = (
+    "motion sensor",
+    "touchpad",
+    "accelerometer",
+    "gyro",
+    "pointer",
+    "mouse",
+    "headset",
+    "keyboard",
+)
+
+
+def _is_real_gamepad_device(path: str) -> bool:
+    try:
+        import fcntl
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            buf = bytearray(1)
+            fcntl.ioctl(fd, 0x80016a11, buf)  # JSIOCGAXES
+            axes = buf[0]
+            fcntl.ioctl(fd, 0x80016a12, buf)  # JSIOCGBUTTONS
+            buttons = buf[0]
+            name_buf = bytearray(128)
+            fcntl.ioctl(fd, 0x80806a13, name_buf)  # JSIOCGNAME
+            name = name_buf.split(b"\0")[0].decode("utf-8", errors="replace").lower()
+        finally:
+            os.close(fd)
+
+        if any(ign in name for ign in IGNORE_DEVICE_NAME_SUBSTRINGS):
+            return False
+        # Gamepads have at least 10 buttons (A, B, X, Y, LB, RB, Back, Start, LS, RS)
+        # and at least 4 axes (LX, LY, RX, RY). Mice and sensor devices have fewer.
+        if buttons < 10 or axes < 4:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 class LinuxJoystickDevice:
     def __init__(self, path: str):
         self.path = path
         self.fd: int | None = None
+        self.name: str = ""
         self.state = LinuxGamepadState()
         self.buttons: dict[int, bool] = {}
         self.axes: dict[int, int] = {}
+        self.btn_map: dict[int, int] = {}
+        self.ax_map: dict[int, int] = {}
         self.open()
 
     def open(self) -> bool:
         try:
             self.fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
+            self._load_maps()
             return True
         except OSError:
             self.fd = None
             return False
+
+    def _load_maps(self) -> None:
+        if self.fd is None:
+            return
+        import array, fcntl
+        try:
+            name_buf = bytearray(128)
+            fcntl.ioctl(self.fd, 0x80806a13, name_buf)  # JSIOCGNAME
+            self.name = name_buf.split(b"\0")[0].decode("utf-8", errors="replace")
+        except Exception:
+            self.name = ""
+
+        try:
+            buf = bytearray(1)
+            fcntl.ioctl(self.fd, 0x80016a12, buf)  # JSIOCGBUTTONS
+            n_buttons = buf[0]
+            b_arr = array.array("H", [0] * 64)
+            fcntl.ioctl(self.fd, 0x80806a34, b_arr)  # JSIOCGBTNMAP
+            self.btn_map = {i: b_arr[i] for i in range(min(n_buttons, len(b_arr)))}
+        except Exception:
+            self.btn_map = {}
+
+        try:
+            buf = bytearray(1)
+            fcntl.ioctl(self.fd, 0x80016a11, buf)  # JSIOCGAXES
+            n_axes = buf[0]
+            a_arr = array.array("B", [0] * 64)
+            fcntl.ioctl(self.fd, 0x80406a32, a_arr)  # JSIOCGAXMAP
+            self.ax_map = {i: a_arr[i] for i in range(min(n_axes, len(a_arr)))}
+        except Exception:
+            self.ax_map = {}
 
     def close(self) -> None:
         if self.fd is not None:
@@ -357,43 +431,77 @@ class LinuxJoystickDevice:
             return None
 
         w_buttons = 0
-        if self.buttons.get(0):
-            w_buttons |= XINPUT_GAMEPAD_A
-        if self.buttons.get(1):
-            w_buttons |= XINPUT_GAMEPAD_B
-        if self.buttons.get(2):
-            w_buttons |= XINPUT_GAMEPAD_X
-        if self.buttons.get(3):
-            w_buttons |= XINPUT_GAMEPAD_Y
-        if self.buttons.get(4):
-            w_buttons |= XINPUT_GAMEPAD_LEFT_SHOULDER
-        if self.buttons.get(5):
-            w_buttons |= XINPUT_GAMEPAD_RIGHT_SHOULDER
-        # Back / Select: Xbox button 6, PlayStation / DualSense button 8
-        if self.buttons.get(6) or self.buttons.get(8):
-            w_buttons |= XINPUT_GAMEPAD_BACK
-        # Start / Options: Xbox button 7, PlayStation / DualSense button 9
-        if self.buttons.get(7) or self.buttons.get(9):
-            w_buttons |= XINPUT_GAMEPAD_START
-        # Thumbsticks: Xbox 9 & 10, PlayStation 11 & 12
-        if self.buttons.get(9) or self.buttons.get(11):
-            w_buttons |= XINPUT_GAMEPAD_LEFT_THUMB
-        if self.buttons.get(10) or self.buttons.get(12):
-            w_buttons |= XINPUT_GAMEPAD_RIGHT_THUMB
+        if self.btn_map:
+            for num, pressed in self.buttons.items():
+                if not pressed:
+                    continue
+                code = self.btn_map.get(num)
+                if code == 0x130:  # BTN_SOUTH (A / Cross)
+                    w_buttons |= XINPUT_GAMEPAD_A
+                elif code == 0x131:  # BTN_EAST (B / Circle)
+                    w_buttons |= XINPUT_GAMEPAD_B
+                elif code == 0x133:  # BTN_NORTH (X / Square)
+                    w_buttons |= XINPUT_GAMEPAD_X
+                elif code == 0x134:  # BTN_WEST (Y / Triangle)
+                    w_buttons |= XINPUT_GAMEPAD_Y
+                elif code == 0x136:  # BTN_TL (LB / L1)
+                    w_buttons |= XINPUT_GAMEPAD_LEFT_SHOULDER
+                elif code == 0x137:  # BTN_TR (RB / R1)
+                    w_buttons |= XINPUT_GAMEPAD_RIGHT_SHOULDER
+                elif code == 0x13a:  # BTN_SELECT (Back / Select / Share)
+                    w_buttons |= XINPUT_GAMEPAD_BACK
+                elif code == 0x13b:  # BTN_START (Start / Options)
+                    w_buttons |= XINPUT_GAMEPAD_START
+                elif code == 0x13d:  # BTN_THUMBL (LS / L3)
+                    w_buttons |= XINPUT_GAMEPAD_LEFT_THUMB
+                elif code == 0x13e:  # BTN_THUMBR (RS / R3)
+                    w_buttons |= XINPUT_GAMEPAD_RIGHT_THUMB
+                elif code == 0x220:  # BTN_DPAD_UP
+                    w_buttons |= XINPUT_GAMEPAD_DPAD_UP
+                elif code == 0x221:  # BTN_DPAD_DOWN
+                    w_buttons |= XINPUT_GAMEPAD_DPAD_DOWN
+                elif code == 0x222:  # BTN_DPAD_LEFT
+                    w_buttons |= XINPUT_GAMEPAD_DPAD_LEFT
+                elif code == 0x223:  # BTN_DPAD_RIGHT
+                    w_buttons |= XINPUT_GAMEPAD_DPAD_RIGHT
+        else:
+            if self.buttons.get(0):
+                w_buttons |= XINPUT_GAMEPAD_A
+            if self.buttons.get(1):
+                w_buttons |= XINPUT_GAMEPAD_B
+            if self.buttons.get(2):
+                w_buttons |= XINPUT_GAMEPAD_X
+            if self.buttons.get(3):
+                w_buttons |= XINPUT_GAMEPAD_Y
+            if self.buttons.get(4):
+                w_buttons |= XINPUT_GAMEPAD_LEFT_SHOULDER
+            if self.buttons.get(5):
+                w_buttons |= XINPUT_GAMEPAD_RIGHT_SHOULDER
+            if self.buttons.get(6) or self.buttons.get(8):
+                w_buttons |= XINPUT_GAMEPAD_BACK
+            if self.buttons.get(7) or self.buttons.get(9):
+                w_buttons |= XINPUT_GAMEPAD_START
+            if self.buttons.get(9) or self.buttons.get(11):
+                w_buttons |= XINPUT_GAMEPAD_LEFT_THUMB
+            if self.buttons.get(10) or self.buttons.get(12):
+                w_buttons |= XINPUT_GAMEPAD_RIGHT_THUMB
 
-        # D-pad on buttons
-        if self.buttons.get(11):
-            w_buttons |= XINPUT_GAMEPAD_DPAD_UP
-        if self.buttons.get(12):
-            w_buttons |= XINPUT_GAMEPAD_DPAD_DOWN
-        if self.buttons.get(13):
-            w_buttons |= XINPUT_GAMEPAD_DPAD_LEFT
-        if self.buttons.get(14):
-            w_buttons |= XINPUT_GAMEPAD_DPAD_RIGHT
+        # Axes resolution via ax_map (evdev code -> js axis index)
+        if self.ax_map:
+            code_to_axis = {v: k for k, v in self.ax_map.items()}
+            lx_idx = code_to_axis.get(0x00, 0)    # ABS_X
+            ly_idx = code_to_axis.get(0x01, 1)    # ABS_Y
+            rx_idx = code_to_axis.get(0x03, 3)    # ABS_RX
+            ry_idx = code_to_axis.get(0x04, 4)    # ABS_RY
+            lt_idx = code_to_axis.get(0x02, 2)    # ABS_Z
+            rt_idx = code_to_axis.get(0x05, 5)    # ABS_RZ
+            hat_x_idx = code_to_axis.get(0x10, 6) # ABS_HAT0X
+            hat_y_idx = code_to_axis.get(0x11, 7) # ABS_HAT0Y
+        else:
+            lx_idx, ly_idx, lt_idx, rx_idx, ry_idx, rt_idx, hat_x_idx, hat_y_idx = 0, 1, 2, 3, 4, 5, 6, 7
 
-        # D-pad on standard hat axes (axes 6 & 7)
-        hat_x = self.axes.get(6, 0)
-        hat_y = self.axes.get(7, 0)
+        hat_x = self.axes.get(hat_x_idx, 0)
+        hat_y = self.axes.get(hat_y_idx, 0)
         if hat_x < -16000:
             w_buttons |= XINPUT_GAMEPAD_DPAD_LEFT
         elif hat_x > 16000:
@@ -403,15 +511,14 @@ class LinuxJoystickDevice:
         elif hat_y > 16000:
             w_buttons |= XINPUT_GAMEPAD_DPAD_DOWN
 
-        # Sticks: Axis 0=LX, 1=LY (Linux positive Y is down, invert for XInput convention)
-        lx = self.axes.get(0, 0)
-        ly = -self.axes.get(1, 0)
-        rx = self.axes.get(3, 0)
-        ry = -self.axes.get(4, 0)
+        lx = self.axes.get(lx_idx, 0)
+        ly = -self.axes.get(ly_idx, 0)
+        rx = self.axes.get(rx_idx, 0)
+        ry = -self.axes.get(ry_idx, 0)
 
         # Triggers: Axis 2 (LT) and Axis 5 (RT) on Linux are -32767..32767. Map to 0..255
-        lt_raw = self.axes.get(2, -32768)
-        rt_raw = self.axes.get(5, -32768)
+        lt_raw = self.axes.get(lt_idx, -32768)
+        rt_raw = self.axes.get(rt_idx, -32768)
         lt = max(0, min(255, int((lt_raw + 32768) / 65535 * 255)))
         rt = max(0, min(255, int((rt_raw + 32768) / 65535 * 255)))
 
@@ -441,14 +548,17 @@ class _LinuxGamepadManager:
         return dev.poll()
 
     def _scan(self) -> None:
-        paths = sorted(glob.glob("/dev/input/js*"))
+        all_paths = sorted(glob.glob("/dev/input/js*"))
+        paths = [p for p in all_paths if _is_real_gamepad_device(p)]
         for slot in range(4):
             if slot < len(paths):
                 path = paths[slot]
                 if slot not in self.devices or self.devices[slot].path != path:
                     if slot in self.devices:
                         self.devices[slot].close()
-                    self.devices[slot] = LinuxJoystickDevice(path)
+                    dev = LinuxJoystickDevice(path)
+                    self.devices[slot] = dev
+                    print(f"[controller] slot {slot} connected: {dev.name or path}")
             elif slot in self.devices:
                 self.devices[slot].close()
                 del self.devices[slot]
