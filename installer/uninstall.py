@@ -185,8 +185,14 @@ def collect_targets(avd_name: str) -> list[Path]:
     try:
         import create_shortcut
         targets.append(create_shortcut.desktop_dir() / create_shortcut.SHORTCUT_NAME)
+        targets.append(create_shortcut.desktop_dir() / create_shortcut.MANAGER_SHORTCUT_NAME)
+        if sys.platform != "win32":
+            apps_dir = Path.home() / ".local" / "share" / "applications"
+            targets.append(apps_dir / create_shortcut.SHORTCUT_NAME)
+            targets.append(apps_dir / create_shortcut.MANAGER_SHORTCUT_NAME)
     except Exception:
-        targets.append(Path.home() / "Desktop" / "Community-iiSU-PC.lnk")
+        fallback_ext = ".lnk" if sys.platform == "win32" else ".desktop"
+        targets.append(Path.home() / "Desktop" / f"Community-iiSU-PC{fallback_ext}")
 
     return targets
 

@@ -32,17 +32,20 @@ PROJECT_ROOT = BRIDGE_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT / "installer"))
 from jre_env import java_subprocess_env
 START_SCRIPT = BRIDGE_DIR / "start_iisu_pc.py"
-SHORTCUT_NAME = "Community-iiSU-PC.lnk"
+SHORTCUT_NAME = "Community-iiSU-PC.lnk" if sys.platform == "win32" else "Community-iiSU-PC.desktop"
 
 # The installer's own [Icons] entries (CommunityIisuPC.iss) create this one
 # at install time, before any APK has ever been processed, so it's always
 # hardcoded to FALLBACK_ICON_PATH. Nothing else ever revisits it afterward,
 # confirmed live: it stays generic forever even once a real icon has been
 # extracted. Re-pointed to match here whenever extraction succeeds.
-MANAGER_SHORTCUT_NAME = "Community-iiSU-PC Manager.lnk"
+MANAGER_SHORTCUT_NAME = "Community-iiSU-PC Manager.lnk" if sys.platform == "win32" else "Community-iiSU-PC-Manager.desktop"
 
-FALLBACK_ICON_PATH = BRIDGE_DIR / "assets" / "iisu_launch.ico"
-EXTRACTED_ICON_PATH = BRIDGE_DIR / ".iisu_icon.ico"
+FALLBACK_ICON_PATH = BRIDGE_DIR / "assets" / ("iisu_launch.ico" if sys.platform == "win32" else "iisu_launch.png")
+FALLBACK_ICO_PATH = BRIDGE_DIR / "assets" / "iisu_launch.ico"
+EXTRACTED_ICON_PATH = BRIDGE_DIR / (".iisu_icon.ico" if sys.platform == "win32" else ".iisu_icon.png")
+EXTRACTED_ICO_PATH = BRIDGE_DIR / ".iisu_icon.ico"
+EXTRACTED_PNG_PATH = BRIDGE_DIR / ".iisu_icon.png"
 APKTOOL_JAR = PROJECT_ROOT / "installer" / "tools" / "apktool.jar"
 INPUT_DIR = PROJECT_ROOT / "installer" / "input"
 
@@ -149,7 +152,8 @@ def extract_iisu_icon(apk_path: Path | None = None) -> Path | None:
         # largest available frame and silently drops any requested size
         # bigger than it, so this must be the biggest, not the smallest.
         frames = sorted((image.resize((s, s), Image.LANCZOS) for s in ICON_SIZES), key=lambda f: f.size, reverse=True)
-        frames[0].save(EXTRACTED_ICON_PATH, format="ICO", sizes=[(s, s) for s in ICON_SIZES], append_images=frames[1:])
+        frames[0].save(EXTRACTED_ICO_PATH, format="ICO", sizes=[(s, s) for s in ICON_SIZES], append_images=frames[1:])
+        image.save(EXTRACTED_PNG_PATH, format="PNG")
         print(f"[shortcut] extracted iiSU's own icon from {apk_path.name}")
         return EXTRACTED_ICON_PATH
     except Exception as e:
@@ -160,6 +164,18 @@ def extract_iisu_icon(apk_path: Path | None = None) -> Path | None:
 
 
 def desktop_dir() -> Path:
+    if sys.platform != "win32":
+        try:
+            res = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                p = Path(res.stdout.strip())
+                if p.is_dir():
+                    return p
+        except Exception:
+            pass
+        p = Path.home() / "Desktop"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
         capture_output=True, text=True, check=True, creationflags=0x08000000,  # CREATE_NO_WINDOW
@@ -174,9 +190,39 @@ def _refresh_shell_icon_cache() -> None:
     Explorer can keep showing the old icon indefinitely otherwise. This is
     the standard, documented way to tell it to flush and re-render icon
     associations, short of restarting explorer.exe entirely."""
-    SHCNE_ASSOCCHANGED = 0x08000000
-    SHCNF_IDLIST = 0x0000
-    ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
+    if sys.platform == "win32":
+        SHCNE_ASSOCCHANGED = 0x08000000
+        SHCNF_IDLIST = 0x0000
+        ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
+    else:
+        app_dir = Path.home() / ".local" / "share" / "applications"
+        if shutil.which("update-desktop-database"):
+            subprocess.run(["update-desktop-database", str(app_dir)], capture_output=True)
+
+
+def _create_manager_desktop_file(icon_path: Path) -> Path:
+    desktop_file_content = (
+        "[Desktop Entry]\n"
+        "Version=1.0\n"
+        "Type=Application\n"
+        "Name=Community-iiSU-PC Manager\n"
+        "GenericName=Emulator Frontend Manager\n"
+        "Comment=Manage Community-iiSU-PC configuration and library\n"
+        f"Exec=\"{sys.executable}\" -m bridge.ui.app\n"
+        f"Path={PROJECT_ROOT}\n"
+        f"Icon={icon_path.resolve()}\n"
+        "Terminal=false\n"
+        "Categories=Game;Emulator;Settings;Utility;\n"
+    )
+    app_menu_file = Path.home() / ".local" / "share" / "applications" / MANAGER_SHORTCUT_NAME
+    app_menu_file.parent.mkdir(parents=True, exist_ok=True)
+    app_menu_file.write_text(desktop_file_content, encoding="utf-8")
+    app_menu_file.chmod(0o755)
+
+    shortcut_path = desktop_dir() / MANAGER_SHORTCUT_NAME
+    shortcut_path.write_text(desktop_file_content, encoding="utf-8")
+    shortcut_path.chmod(0o755)
+    return shortcut_path
 
 
 def _update_manager_shortcut_icon(icon_path: Path) -> None:
@@ -186,6 +232,9 @@ def _update_manager_shortcut_icon(icon_path: Path) -> None:
     (skips a pointless PowerShell call on every ordinary launch). Only
     ever upgrades it away from the generic icon, never touches TargetPath/
     Arguments/WorkingDirectory, those are Inno's to own."""
+    if sys.platform != "win32":
+        _create_manager_desktop_file(icon_path)
+        return
     manager_path = desktop_dir() / MANAGER_SHORTCUT_NAME
     if not manager_path.is_file():
         return
@@ -213,6 +262,33 @@ def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
         print("[shortcut] using the generic fallback icon, not iiSU's own, see the line above for why")
     else:
         _update_manager_shortcut_icon(icon_path)
+
+    if sys.platform != "win32":
+        _create_manager_desktop_file(icon_path)
+        shortcut_path = desktop_dir() / SHORTCUT_NAME
+        desktop_file_content = (
+            "[Desktop Entry]\n"
+            "Version=1.0\n"
+            "Type=Application\n"
+            "Name=Community-iiSU-PC\n"
+            "GenericName=Wii U Frontend\n"
+            "Comment=Launch Community-iiSU-PC\n"
+            f"Exec=\"{sys.executable}\" \"{START_SCRIPT}\"\n"
+            f"Path={BRIDGE_DIR}\n"
+            f"Icon={icon_path.resolve()}\n"
+            "Terminal=false\n"
+            "Categories=Game;Emulator;\n"
+        )
+        app_menu_file = Path.home() / ".local" / "share" / "applications" / SHORTCUT_NAME
+        app_menu_file.parent.mkdir(parents=True, exist_ok=True)
+        app_menu_file.write_text(desktop_file_content, encoding="utf-8")
+        app_menu_file.chmod(0o755)
+
+        shortcut_path.write_text(desktop_file_content, encoding="utf-8")
+        shortcut_path.chmod(0o755)
+        _refresh_shell_icon_cache()
+        return shortcut_path
+
     shortcut_path = desktop_dir() / SHORTCUT_NAME
     script = (
         "$shell = New-Object -ComObject WScript.Shell\n"
