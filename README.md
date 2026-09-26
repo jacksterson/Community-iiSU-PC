@@ -136,6 +136,14 @@ tests/                    unit tests for the pure routing/mapping logic (no AVD 
 - Re-running setup is safe: it skips anything already done and won't overwrite an existing `config.json`'s settings.
 - Community-iiSU-PC uses a quick resume when nothing relevant has changed since the last start, and only cold-boots (a bit slower) when your settings or ROM library have changed since then, or on the very first start.
 
+## Support & Donations
+
+If you find the Linux port helpful and would like to support ongoing development and maintenance:
+
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://paypal.me/jacksterson)
+
+You can donate directly via PayPal at **[paypal.me/jacksterson](https://paypal.me/jacksterson)**. Any support is greatly appreciated!
+
 ## Credits
 
 - **[MAGOOSKEE](https://github.com/MAGOOSKEE)**: project owner, built and maintains Community-iiSU-PC.

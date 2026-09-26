@@ -8,6 +8,7 @@ bridge/ui/workers/{task_runner,log_stream}.py's docstrings."""
 import os
 import sys
 import traceback
+import webbrowser
 from pathlib import Path
 
 import bridge.ui  # noqa: F401; import-time side effect: puts root/bridge/installer on sys.path
@@ -158,6 +159,16 @@ class HomePage(PageBase):
         self.stage_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.stage_label.setStyleSheet(f"color: {TEXT_DIM};")
         center_layout.addWidget(self.stage_label)
+
+        self.donate_button = QPushButton("💖 Support Development (paypal.me/jacksterson)")
+        self.donate_button.setObjectName("ghost")
+        self.donate_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.donate_button.setToolTip("Donate via PayPal to support Community-iiSU-PC Linux development")
+        self.donate_button.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 11px; padding: 4px 12px; border: 1px solid #2e2e33; border-radius: 6px;"
+        )
+        self.donate_button.clicked.connect(lambda: webbrowser.open("https://paypal.me/jacksterson"))
+        center_layout.addWidget(self.donate_button, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self.body_layout.addWidget(center_col, 0, Qt.AlignmentFlag.AlignHCenter)
         self.body_layout.addStretch(1)
