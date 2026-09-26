@@ -78,7 +78,16 @@ def is_avd_running() -> bool:
 
 
 def kill_tree(pid: int) -> None:
-    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+    else:
+        try:
+            import os, signal
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(0.2)
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def kill_by_cmdline_match(needle: str) -> None:
@@ -95,12 +104,15 @@ def kill_by_cmdline_match(needle: str) -> None:
     which would also take down unrelated Python processes on the same
     PC) makes this self-healing regardless of how state.json got out of
     sync with what's actually running."""
-    script = (
-        "Get-CimInstance Win32_Process "
-        f"| Where-Object {{ $_.CommandLine -like '*{needle}*' }} "
-        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    )
-    subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+    if sys.platform == "win32":
+        script = (
+            "Get-CimInstance Win32_Process "
+            f"| Where-Object {{ $_.CommandLine -like '*{needle}*' }} "
+            "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+    else:
+        subprocess.run(["pkill", "-f", needle], capture_output=True)
 
 
 def _remove_path_with_retry(path: Path, attempts: int = 5, delay: float = 1.0) -> None:

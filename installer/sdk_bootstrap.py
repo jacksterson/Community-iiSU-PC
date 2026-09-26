@@ -38,6 +38,7 @@ SDK_ROOT = SCRIPT_DIR / "android-sdk"
 # runs from the GUI's Setup flow (pythonw.exe, no console of its own), so
 # without CREATE_NO_WINDOW each multi-minute SDK/AVD command below would
 # pop up its own window.
+CREATE_NO_WINDOW = 0x08000000
 IS_WINDOWS = sys.platform == "win32"
 
 if IS_WINDOWS:
