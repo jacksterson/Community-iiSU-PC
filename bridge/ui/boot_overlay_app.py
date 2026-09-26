@@ -14,7 +14,11 @@ Usage: python -m bridge.ui.boot_overlay_app <context> [flavor]
 
 import math
 import sys
-import winreg
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 import bridge.ui  # noqa: F401; import-time side effect: puts root/bridge/installer on sys.path
 

@@ -42,16 +42,17 @@ persistent choice covering every DualSense/DS4 from then on.
 """
 
 import ctypes
+import os
 import subprocess
+import sys
 import time
 from ctypes import wintypes
 
-# adb.exe is a console-subsystem executable; spawned from pythonw.exe
-# (no console of its own), Windows would otherwise give it a brand new
-# console window every time _ensure_shell() below (re)creates it, and
-# since this runs continuously while the Manager is open, a dropped/
-# recreated shell here is exactly the "terminal keeps popping up" bug,
-# not a one-off.
+try:
+    import shared.platform_compat  # noqa: F401
+except ImportError:
+    pass
+
 CREATE_NO_WINDOW = 0x08000000
 
 # XINPUT_GAMEPAD.wButtons bitmask
@@ -186,10 +187,15 @@ class JoyCapsW(ctypes.Structure):
     ]
 
 
-_winmm = ctypes.windll.winmm
-_winmm.joyGetNumDevs.restype = wintypes.UINT
-_winmm.joyGetDevCapsW.argtypes = [ctypes.c_uint, ctypes.POINTER(JoyCapsW), ctypes.c_uint]
-_winmm.joyGetDevCapsW.restype = wintypes.UINT
+_winmm = None
+if hasattr(ctypes, "windll"):
+    try:
+        _winmm = ctypes.windll.winmm
+        _winmm.joyGetNumDevs.restype = wintypes.UINT
+        _winmm.joyGetDevCapsW.argtypes = [ctypes.c_uint, ctypes.POINTER(JoyCapsW), ctypes.c_uint]
+        _winmm.joyGetDevCapsW.restype = wintypes.UINT
+    except Exception:
+        _winmm = None
 
 
 def find_unmapped_sony_controllers() -> list[str]:
@@ -200,6 +206,8 @@ def find_unmapped_sony_controllers() -> list[str]:
     (or DS4Windows, etc.) is already doing that job and there's nothing to
     fix. Returns the product name of every Sony PlayStation controller
     found this way (there can be more than one)."""
+    if _winmm is None:
+        return []
     found = []
     caps = JoyCapsW()
     for joy_id in range(_winmm.joyGetNumDevs()):
@@ -211,15 +219,20 @@ def find_unmapped_sony_controllers() -> list[str]:
 
 
 def find_steam_exe() -> str | None:
-    """Steam's own install path, from the registry key it writes itself on
-    install, more reliable than guessing a Program Files location, since
-    Steam can be installed anywhere the person chose."""
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-            return winreg.QueryValueEx(key, "SteamExe")[0]
-    except OSError:
-        return None
+    """Steam's own install path, from the registry on Windows or PATH on Linux."""
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
+                return winreg.QueryValueEx(key, "SteamExe")[0]
+        except (OSError, AttributeError):
+            return None
+    import shutil
+    for candidate in ("steam", "steam-runtime"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return None
 
 
 def open_steam_for_controller_setup(controller_name: str) -> None:
@@ -259,6 +272,8 @@ class XinputState(ctypes.Structure):
 
 
 def _load_xinput():
+    if not hasattr(ctypes, "windll"):
+        return None
     for name in ("xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll"):
         try:
             return ctypes.windll.LoadLibrary(name)

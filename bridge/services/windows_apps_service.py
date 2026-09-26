@@ -185,9 +185,15 @@ def steam_library_paths() -> list[Path]:
         os.environ.get("PROGRAMFILES", ""),
         os.environ.get("LOCALAPPDATA", ""),
     ]
-    for base in env_candidates:
-        if base:
-            candidates.extend([Path(base) / "Steam", Path(base) / "steam"])
+    linux_candidates = [
+        Path.home() / ".local/share/Steam",
+        Path.home() / ".steam/steam",
+        Path.home() / ".steam/root",
+        Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+    ]
+    for p in linux_candidates:
+        if p.is_dir():
+            candidates.append(p)
     try:
         import winreg
 

@@ -546,8 +546,9 @@ def find_emulator_for_package(package: str, emulators: dict, rom_filename: str |
 
 def core_dll_from_pre_args(pre_args: list[str]) -> str | None:
     for arg in pre_args:
-        if arg.startswith("cores/") or arg.startswith("cores\\"):
-            return Path(arg).name
+        normalized = arg.replace("\\", "/")
+        if normalized.startswith("cores/"):
+            return normalized.rsplit("/", 1)[-1]
     return None
 
 
