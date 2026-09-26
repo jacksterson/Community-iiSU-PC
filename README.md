@@ -1,36 +1,44 @@
-# Community-iiSU-PC Setup
+# Community-iiSU-PC Setup (Linux & Windows)
 
-Runs iiSU (an Android emulation frontend) inside a Windows-hosted Android VM, patched so launching a game in iiSU hands off to a real PC emulator instead of an Android one.
+Runs iiSU (an Android emulation frontend) inside a hardware-accelerated Android VM on **Linux** (via KVM) and **Windows** (via Hyper-V/WHP), patched so launching a game in iiSU seamlessly hands off to native PC emulators instead of Android ones.
 
 **This does not include iiSU itself.** iiSU is closed-source, third-party software this project has no direct affiliation with. You will need your own copy of its APK. This tool patches *your* copy, the same way any APK-patching/modding tool works; it never bundles or redistributes iiSU's binary.
 
-## Installing
+## Features
 
-**Recommended:** download `Community-iiSU-PC-Setup-<version>.exe` from the [latest release](https://github.com/MAGOOSKEE/Community-iiSU-PC/releases/latest) and run it. It bundles its own Python and Java runtimes, so you don't need either installed first.
-
-**From source:** clone the repo instead if you want to track `dev` or make changes. This needs Python and a JDK on PATH yourself (see Requirements below).
+- **Native Linux & Windows Support:** Seamless borderless fullscreen auto-launch with 1:1 monitor scaling and automatic window rule configuration (KWin / X11 / Wayland compatibility).
+- **Zero-Friction Immersion:** Stock Android launcher and Google boot logos disabled so it feels like a native frontend application rather than an Android VM.
+- **Controller Support:** Native Linux joystick and XInput bridge for Xbox and PlayStation (DualSense / DualShock) gamepads, with automated input filtering.
+- **Built-in Emulator Downloader:** Integrated Flatpak / native emulator downloader in Settings and Onboarding to get DuckStation, Dolphin, PCSX2, RPCS3, RetroArch, and more in one click.
+- **Global Quit Hotkeys:** Graceful shutdown via `Esc`, `Alt+F4`, `Ctrl+Q`, or controller chord (`Select + Start`).
 
 ## Requirements
 
-- Windows 10/11 (64-bit)
-- Your own copy of the iiSU APK
-- Whichever PC emulators you want to use (DuckStation, Dolphin, PCSX2, etc.), install these yourself
-- A few GB of free disk space and a decent internet connection (first run downloads the Android SDK + a system image)
-- **CPU VIRTUALIZATION MUST BE TURNED ON!** Do this in your bios. Ensure that Hyper-V or the Windows Hypervisor Platform and Virtual Machine Platform are enabled also.
-- Running from source only: Python 3.11+ and a JDK on PATH (`java` and `keytool` need to work from a terminal), e.g. [Eclipse Temurin](https://adoptium.net/). The installer above bundles both, so these aren't needed if you used it.
+- **Linux:** 64-bit distribution with KVM enabled (`/dev/kvm`), Python 3.10+, and OpenJDK/Java (`java` and `keytool` on PATH).
+- **Windows:** Windows 10/11 (64-bit) with CPU virtualization enabled in BIOS.
+- Your own copy of the iiSU APK (drop into `installer/input/` or browse during setup).
+- Whichever PC emulators you want to use (or install them automatically via the Manager's downloader).
+- Free disk space for the self-contained Android SDK and system image.
 
 ## First-time setup
 
-1. Drop your iiSU APK into `installer/input/`, or just point Setup at it with Browse.
+### Linux
+1. Drop your iiSU APK into `installer/input/`, or point Setup at it with Browse.
+2. Run **`./Setup.sh`** or **`./Community-iiSU-PC\ Manager.sh`** and click **Run Setup** on the Home page.
+
+### Windows
+1. Drop your iiSU APK into `installer/input/`, or point Setup at it with Browse.
 2. Run **`Community-iiSU-PC Manager.bat`** and click **Run Setup** on its Home page.
 
-Setup checks your APK is actually iiSU and that you have enough disk space, then downloads and sets up a self-contained Android SDK and virtual device, patches your APK, installs it, installs a redirector app for every console `shared/emulator_defaults.py` knows about, and creates a desktop shortcut. It shows which step it's on, since first run can take a while and several GB.
+Setup checks your APK, downloads and sets up a self-contained portable Android SDK and AVD, patches your APK with the PC launch bridge, installs redirector apps, and creates desktop shortcuts.
 
-Once it's done, a short onboarding wizard walks you through your ROM directory, emulator search folders, display resolution, and hotkeys. The Manager's settings pages are there afterward for anything the wizard doesn't cover, and its Home page switches from "Run Setup" to "Open" once setup finishes.
+Once setup finishes, the onboarding wizard walks you through selecting your ROM directory, scanning emulators, display resolution, and controller quit chords.
 
 ## Day to day use
 
-Double-click the **desktop shortcut**, or run **`Community-iiSU-PC Manager.bat`** for the full Manager: one window, navigated with the sidebar:
+- Launch directly via the **Community-iiSU-PC** desktop shortcut.
+- Open the manager anytime with **`./Community-iiSU-PC\ Manager.sh`** (Linux) or **`Community-iiSU-PC Manager.bat`** (Windows).
+- To stop or exit: press **`Esc`**, **`Alt+F4`**, **`Ctrl+Q`**, press **`Select+Start`** on your controller, or double-click the **Stop Community-iiSU-PC** shortcut.
 
 - **Home**: AVD/bridge status, Open/Stop, a running status line, and quick buttons to your ROMs folder and logs.
 - **Library**: ROM Directory (your host ROM folder), Media Library (check/restore saved media, and browse/install more through iiDB), Android Storage (browse and manage the VM's shared storage over ADB).
