@@ -75,9 +75,11 @@ def ensure_linux_kwin_rules() -> bool:
 [{main_rule_id}]
 Description=Community-iiSU-PC Main Window
 fullscreen=true
-fullscreenrule=2
+fullscreenrule=3
 noborder=true
-noborderrule=2
+noborderrule=3
+closeable=true
+closeablerule=2
 title=Android Emulator
 titlematch=2
 types=1

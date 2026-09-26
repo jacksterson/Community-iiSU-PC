@@ -86,9 +86,15 @@ def kill_tree(pid: int) -> None:
     else:
         try:
             import os, signal
-            os.kill(pid, signal.SIGTERM)
-            time.sleep(0.2)
-            os.kill(pid, signal.SIGKILL)
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+                time.sleep(0.2)
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.2)
+                os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
 
@@ -171,6 +177,11 @@ def main() -> None:
         print(f"[stop] killing bridge_pid {bridge_pid}...")
         kill_tree(bridge_pid)
 
+    emulator_pid = state.get("emulator_pid")
+    if emulator_pid is not None and is_avd_running():
+        print(f"[stop] killing emulator_pid {emulator_pid}...")
+        kill_tree(emulator_pid)
+
     # Fallback sweep in case graceful shutdown didn't finish in time, the
     # state file is stale/missing, or a process got reparented away from
     # the PID we originally tracked (emulator.exe in particular tends to
@@ -187,6 +198,8 @@ def main() -> None:
     kill_by_cmdline_match("launch_bridge.py")
     print("[stop] sweeping for any remaining emulator/qemu process for this AVD...")
     kill_by_cmdline_match("android-sdk-portable")
+    if avd_name:
+        kill_by_cmdline_match(f"-avd {avd_name}")
 
     # adb.exe runs as a persistent background server (any `adb` command
     # spawns it if it isn't already running) and never exits on its own

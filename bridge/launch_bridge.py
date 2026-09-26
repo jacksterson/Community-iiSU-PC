@@ -73,6 +73,7 @@ from controller_bridge import ControllerBridge
 # script's own cwd, start_iisu_pc.py always launches this as its own
 # subprocess with cwd set to this directory, not the project root.
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import shared.platform_compat  # noqa: F401
 from bridge.ui import boot_overlay_qt as boot_overlay
 from shared.emulator_defaults import (
     all_emulator_exe_names,
@@ -982,6 +983,144 @@ def quit_key_watcher(config: dict) -> None:
         was_down = is_down
 
 
+def _linux_key_watcher(config: dict) -> None:
+    """Linux implementation of global hotkeys and quit shortcuts.
+    Monitors keyboard events via /dev/input for:
+    - Alt+F4 -> full shutdown
+    - Ctrl+Alt+X -> full shutdown
+    - Ctrl+Shift+Escape -> quit tap action
+    - Escape (tap / release) -> quit tap action (quits running emulator back to iiSU,
+      or shuts down iiSU entirely if at main menu)
+    - Escape (hold for 1.2s) -> full shutdown
+    """
+    import glob
+    import select
+    import struct
+
+    EVENT_FORMAT = "qqHHi" if struct.calcsize("l") == 8 else "llHHi"
+    EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
+
+    EV_KEY = 1
+    KEY_ESC = 1
+    KEY_LEFTCTRL = 29
+    KEY_RIGHTCTRL = 97
+    KEY_LEFTALT = 56
+    KEY_RIGHTALT = 100
+    KEY_LEFTSHIFT = 42
+    KEY_RIGHTSHIFT = 54
+    KEY_F4 = 62
+    KEY_X = 45
+    KEY_Q = 16
+
+    print("[bridge] Linux keyboard quit hotkeys active: Esc / Alt+F4 / Ctrl+Q / Ctrl+Alt+X")
+
+    pressed_keys: set[int] = set()
+    esc_down_time: float | None = None
+    last_rescan = 0.0
+    fds: dict[int, str] = {}
+
+    def _update_fds():
+        nonlocal fds
+        current_paths = set(fds.values())
+        candidate_paths = set(glob.glob("/dev/input/by-id/*-kbd") + glob.glob("/dev/input/by-id/*-event-kbd"))
+        if not candidate_paths:
+            candidate_paths = set(glob.glob("/dev/input/event*"))
+        for p in candidate_paths - current_paths:
+            try:
+                fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
+                fds[fd] = p
+            except Exception:
+                pass
+        dead_fds = []
+        for fd, p in fds.items():
+            if not os.path.exists(p):
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+                dead_fds.append(fd)
+        for fd in dead_fds:
+            del fds[fd]
+
+    _update_fds()
+
+    while True:
+        now = time.time()
+        if now - last_rescan > 5.0:
+            last_rescan = now
+            _update_fds()
+
+        if esc_down_time and (now - esc_down_time > 1.2):
+            print("[bridge] Escape held on Linux, shutting down iiSU and the AVD...")
+            esc_down_time = None
+            shutdown_everything()
+            return
+
+        if not fds:
+            time.sleep(0.5)
+            continue
+
+        try:
+            rlist, _, _ = select.select(list(fds.keys()), [], [], 0.05)
+        except Exception:
+            time.sleep(0.05)
+            continue
+
+        for fd in rlist:
+            try:
+                chunk = os.read(fd, EVENT_SIZE * 32)
+            except Exception:
+                continue
+            if not chunk or len(chunk) < EVENT_SIZE:
+                continue
+
+            for offset in range(0, len(chunk) - EVENT_SIZE + 1, EVENT_SIZE):
+                _, _, ev_type, ev_code, ev_value = struct.unpack(EVENT_FORMAT, chunk[offset:offset + EVENT_SIZE])
+                if ev_type != EV_KEY:
+                    continue
+
+                if ev_value == 1:  # Key down
+                    pressed_keys.add(ev_code)
+                    is_ctrl = (KEY_LEFTCTRL in pressed_keys) or (KEY_RIGHTCTRL in pressed_keys)
+                    is_alt = (KEY_LEFTALT in pressed_keys) or (KEY_RIGHTALT in pressed_keys)
+                    is_shift = (KEY_LEFTSHIFT in pressed_keys) or (KEY_RIGHTSHIFT in pressed_keys)
+
+                    if ev_code == KEY_ESC:
+                        esc_down_time = time.time()
+
+                    # Alt + F4
+                    if is_alt and ev_code == KEY_F4:
+                        print("[bridge] Alt+F4 pressed on Linux, shutting down iiSU...")
+                        shutdown_everything()
+                        return
+
+                    # Ctrl + Q
+                    if is_ctrl and ev_code == KEY_Q:
+                        print("[bridge] Ctrl+Q pressed on Linux, shutting down iiSU...")
+                        shutdown_everything()
+                        return
+
+                    # Ctrl + Alt + X
+                    if is_ctrl and is_alt and ev_code == KEY_X:
+                        print("[bridge] Ctrl+Alt+X pressed on Linux, shutting down iiSU...")
+                        shutdown_everything()
+                        return
+
+                    # Ctrl + Shift + Esc
+                    if is_ctrl and is_shift and ev_code == KEY_ESC:
+                        print("[bridge] Ctrl+Shift+Esc pressed on Linux, closing running game / iiSU...")
+                        quit_tap_action("Ctrl+Shift+Escape pressed")
+
+                elif ev_value == 0:  # Key up
+                    pressed_keys.discard(ev_code)
+                    if ev_code == KEY_ESC:
+                        held_duration = (time.time() - esc_down_time) if esc_down_time else 0
+                        esc_down_time = None
+                        if held_duration < 1.2:
+                            debug_log("Escape key released on Linux")
+                            quit_tap_action("Escape tapped")
+
+
 
 def load_windows_apps() -> dict:
     """Load native Windows app mappings fresh for every launch."""
@@ -1608,8 +1747,11 @@ def main() -> None:
         print(f"[bridge] {e}")
         sys.exit(1)
 
-    threading.Thread(target=hotkey_listener, args=(config,), daemon=True).start()
-    threading.Thread(target=quit_key_watcher, args=(config,), daemon=True).start()
+    if sys.platform == "win32":
+        threading.Thread(target=hotkey_listener, args=(config,), daemon=True).start()
+        threading.Thread(target=quit_key_watcher, args=(config,), daemon=True).start()
+    else:
+        threading.Thread(target=_linux_key_watcher, args=(config,), daemon=True).start()
 
     controller_bridge = ControllerBridge(
         is_game_running,
@@ -1619,13 +1761,12 @@ def main() -> None:
     threading.Thread(target=controller_bridge.run, daemon=True).start()
 
     def _watch_avd_lifetime():
-        time.sleep(30)
+        time.sleep(2)
         while True:
-            time.sleep(4)
+            time.sleep(2)
             try:
                 res = subprocess.run(
-                    ["adb", "devices"], capture_output=True, text=True,
-                    creationflags=0x08000000, timeout=3
+                    ["adb", "devices"], capture_output=True, text=True, timeout=3
                 )
                 if not any(l.startswith("emulator-") and "device" in l for l in res.stdout.splitlines()):
                     debug_log("AVD is no longer running; shutting down bridge")

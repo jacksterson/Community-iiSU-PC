@@ -32,7 +32,9 @@ PROJECT_ROOT = BRIDGE_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT / "installer"))
 from jre_env import java_subprocess_env
 START_SCRIPT = BRIDGE_DIR / "start_iisu_pc.py"
+STOP_SCRIPT = BRIDGE_DIR / "stop_iisu_pc.py"
 SHORTCUT_NAME = "Community-iiSU-PC.lnk" if sys.platform == "win32" else "Community-iiSU-PC.desktop"
+STOP_SHORTCUT_NAME = "Stop Community-iiSU-PC.lnk" if sys.platform == "win32" else "Stop-Community-iiSU-PC.desktop"
 
 # The installer's own [Icons] entries (CommunityIisuPC.iss) create this one
 # at install time, before any APK has ever been processed, so it's always
@@ -256,6 +258,36 @@ def _update_manager_shortcut_icon(icon_path: Path) -> None:
     )
 
 
+def _create_stop_desktop_file(icon_path: Path) -> Path:
+    desktop_file_content = (
+        "[Desktop Entry]\n"
+        "Version=1.0\n"
+        "Type=Application\n"
+        "Name=Stop Community-iiSU-PC\n"
+        "GenericName=Stop iiSU and AVD\n"
+        "Comment=Safely terminate Community-iiSU-PC and Android emulator\n"
+        f"Exec=\"{sys.executable}\" \"{STOP_SCRIPT}\"\n"
+        f"Path={BRIDGE_DIR}\n"
+        f"Icon={icon_path.resolve()}\n"
+        "Terminal=false\n"
+        "Categories=Game;Emulator;Utility;\n"
+    )
+    app_menu_file = Path.home() / ".local" / "share" / "applications" / STOP_SHORTCUT_NAME
+    app_menu_file.parent.mkdir(parents=True, exist_ok=True)
+    app_menu_file.write_text(desktop_file_content, encoding="utf-8")
+    app_menu_file.chmod(0o755)
+
+    shortcut_path = desktop_dir() / STOP_SHORTCUT_NAME
+    shortcut_path.write_text(desktop_file_content, encoding="utf-8")
+    shortcut_path.chmod(0o755)
+    if shutil.which("gio"):
+        try:
+            subprocess.run(["gio", "set", str(shortcut_path), "metadata::trusted", "true"], capture_output=True)
+        except Exception:
+            pass
+    return shortcut_path
+
+
 def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
     extracted = extract_iisu_icon(apk_path)
     icon_path = extracted or FALLBACK_ICON_PATH
@@ -270,6 +302,7 @@ def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
 
     if sys.platform != "win32":
         _create_manager_desktop_file(icon_path)
+        _create_stop_desktop_file(icon_path)
         shortcut_path = desktop_dir() / SHORTCUT_NAME
         desktop_file_content = (
             "[Desktop Entry]\n"
@@ -316,6 +349,22 @@ def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to create shortcut:\n{result.stdout}\n{result.stderr}")
+    
+    stop_path = desktop_dir() / STOP_SHORTCUT_NAME
+    script_stop = (
+        "$shell = New-Object -ComObject WScript.Shell\n"
+        f"$shortcut = $shell.CreateShortcut('{stop_path}')\n"
+        f"$shortcut.TargetPath = '{sys.executable}'\n"
+        f"$shortcut.Arguments = '\"{STOP_SCRIPT}\"'\n"
+        f"$shortcut.WorkingDirectory = '{BRIDGE_DIR}'\n"
+        f"$shortcut.IconLocation = '{icon_path}'\n"
+        "$shortcut.Description = 'Stop Community-iiSU-PC'\n"
+        "$shortcut.Save()\n"
+    )
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command", script_stop], capture_output=True, text=True, creationflags=0x08000000,
+    )
+
     _refresh_shell_icon_cache()
     return shortcut_path
 

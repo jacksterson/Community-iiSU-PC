@@ -369,13 +369,16 @@ class LinuxJoystickDevice:
             w_buttons |= XINPUT_GAMEPAD_LEFT_SHOULDER
         if self.buttons.get(5):
             w_buttons |= XINPUT_GAMEPAD_RIGHT_SHOULDER
-        if self.buttons.get(6):
+        # Back / Select: Xbox button 6, PlayStation / DualSense button 8
+        if self.buttons.get(6) or self.buttons.get(8):
             w_buttons |= XINPUT_GAMEPAD_BACK
-        if self.buttons.get(7):
+        # Start / Options: Xbox button 7, PlayStation / DualSense button 9
+        if self.buttons.get(7) or self.buttons.get(9):
             w_buttons |= XINPUT_GAMEPAD_START
-        if self.buttons.get(9):
+        # Thumbsticks: Xbox 9 & 10, PlayStation 11 & 12
+        if self.buttons.get(9) or self.buttons.get(11):
             w_buttons |= XINPUT_GAMEPAD_LEFT_THUMB
-        if self.buttons.get(10):
+        if self.buttons.get(10) or self.buttons.get(12):
             w_buttons |= XINPUT_GAMEPAD_RIGHT_THUMB
 
         # D-pad on buttons
