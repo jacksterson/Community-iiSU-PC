@@ -19,6 +19,7 @@
 /bridge/.boot_fingerprint.json
 /bridge/emulator.log
 /bridge/.iisu_icon.ico
+/bridge/.iisu_icon.png
 /bridge/_icon_extract_tmp/
 
 # Windows Apps / Manager runtime data

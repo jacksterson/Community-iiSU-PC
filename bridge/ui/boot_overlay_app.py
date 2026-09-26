@@ -56,6 +56,8 @@ def _detect_windows_theme() -> str:
     ("Choose your default app mode") writes, best-effort, since a
     loading screen guessing wrong about system theme is purely cosmetic,
     never worth failing the boot sequence over."""
+    if winreg is None:
+        return "dark"
     try:
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -63,7 +65,7 @@ def _detect_windows_theme() -> str:
         ) as key:
             value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
             return "light" if value else "dark"
-    except OSError:
+    except (OSError, AttributeError):
         return "dark"
 
 

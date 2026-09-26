@@ -177,16 +177,22 @@ def is_bootstrapped(avd_name: str) -> bool:
     )
 
 
-def ensure_portable_sdk(avd_name: str, source_sdk_root: Path) -> dict:
+def ensure_portable_sdk(avd_name: str, source_sdk_root: Path | None = None) -> dict:
     """Copies the emulator binaries, the AVD's system image, and the AVD's
     own config/userdata into android-sdk-portable/ (skipping anything
     already copied), and returns the environment overrides
     (ANDROID_SDK_ROOT, ANDROID_HOME, ANDROID_AVD_HOME) to launch emulator
     with, so it uses this portable copy instead of the system-wide install."""
-    # emulator's own SDK-root validity check requires a platform-tools
-    # subdirectory to exist alongside emulator/ and system-images/, without
-    # it, the root is rejected as invalid regardless of whether the
-    # requested AVD's system image is actually there.
+    if is_bootstrapped(avd_name):
+        sdk_root_str = str(PORTABLE_SDK)
+        return {
+            "ANDROID_SDK_ROOT": sdk_root_str,
+            "ANDROID_HOME": sdk_root_str,
+            "ANDROID_AVD_HOME": str(PORTABLE_AVD_HOME),
+        }
+    if source_sdk_root is None:
+        raise RuntimeError("No source SDK root provided and portable SDK is not yet bootstrapped.")
+
     portable_emulator = PORTABLE_SDK / "emulator" / EMULATOR_BIN
     if not portable_emulator.is_file():
         source_emulator_dir = source_sdk_root / "emulator"

@@ -137,8 +137,10 @@ Maintainer-only, not needed to run or develop the project day to day: `installer
 ## Credits
 
 - **[MAGOOSKEE](https://github.com/MAGOOSKEE)**: project owner, built and maintains Community-iiSU-PC.
+- **[Jacksterson](https://github.com/jacksterson)**: Linux port, cross-platform POSIX compatibility, Flatpak and native Linux emulator integration.
 - **[Claude](https://github.com/claude)** (Anthropic): AI coding assistant; wrote and refactored most of this codebase in collaboration with MAGOOSKEE.
+- **[Gemini](https://github.com/google)** (Google DeepMind): AI coding assistant; engineered the Linux port, POSIX compatibility layer, and platform optimizations in collaboration with Jacksterson.
 
-Both are shown with live GitHub avatars on the Manager's Credits page.
+They are shown with live GitHub avatars on the Manager's Credits page.
 
-**AI disclosure:** a large share of this project's code was written by Claude, an AI assistant, working under MAGOOSKEE's direction and review. If you're evaluating this project for safety or correctness before running it, keep that in mind and read the source.
+**AI disclosure:** a large share of this project's code was written by Claude and Gemini, working under MAGOOSKEE's and Jacksterson's direction and review. If you're evaluating this project for safety or correctness before running it, keep that in mind and read the source.

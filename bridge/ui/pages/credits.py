@@ -21,6 +21,11 @@ _CONTRIBUTORS = [
         "display_name": "Jacko1234wdd",
         "blurb": "Native Windows app/Steam launching, the Android Storage browser, and the Media Library/MediaBridge artwork pipeline.",
     },
+    {
+        "username": "jacksterson",
+        "display_name": "Jacksterson",
+        "blurb": "Linux port, cross-platform POSIX compatibility, Flatpak and native Linux emulator integration.",
+    },
 ]
 
 # Every third-party component this project actually ships or bundles, plus
@@ -100,6 +105,11 @@ class CreditsPage(PageBase):
             "AI coding assistant, wrote and refactored most of this codebase, including this Manager app, "
             "in collaboration with MAGOOSKEE.",
         )
+        self._add_credit_row(
+            "google", "Gemini (Google DeepMind)",
+            "AI coding assistant, engineered the Linux port, POSIX compatibility layer, and platform optimizations "
+            "in collaboration with Jacksterson.",
+        )
         self._add_contributors_section()
         self._add_third_party_section()
 
@@ -107,9 +117,9 @@ class CreditsPage(PageBase):
         disclaimer_layout = QVBoxLayout(disclaimer)
         disclaimer_label = QLabel(
             "AI disclosure: a large share of this project's code (including this Manager\n"
-            "app) was written by Claude, an AI assistant, working under MAGOOSKEE's direction\n"
-            "and review. If you're evaluating this project's safety or correctness, keep that\n"
-            "in mind, read the source rather than assuming a human wrote every line."
+            "app and Linux port) was written by Claude and Gemini, working under MAGOOSKEE's\n"
+            "and Jacksterson's direction and review. If you're evaluating this project's safety\n"
+            "or correctness, keep that in mind, read the source rather than assuming a human wrote every line."
         )
         disclaimer_label.setStyleSheet(f"color: {TEXT_DIM};")
         disclaimer_layout.addWidget(disclaimer_label)

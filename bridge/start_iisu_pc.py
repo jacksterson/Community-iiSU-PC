@@ -38,6 +38,7 @@ only when something has actually changed, rather than on every start.
 import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
