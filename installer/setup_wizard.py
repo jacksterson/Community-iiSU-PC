@@ -312,7 +312,8 @@ def boot_avd_and_install(emulator_exe: Path, avd_name: str, env: dict, patched_a
                 # redirector stubs over adb, then shuts back down. The
                 # emulator still runs and responds to adb identically
                 # headless; only the visible window is skipped.
-                [str(emulator_exe), "-avd", avd_name, "-no-snapshot", "-no-window"],
+                [str(emulator_exe), "-avd", avd_name, "-no-snapshot", "-no-window"]
+                + (["-accel", "on"] if sys.platform != "win32" and Path("/dev/kvm").exists() else []),
                 creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL,
                 stdout=log_file,
@@ -526,6 +527,19 @@ def write_bridge_config(avd_name: str) -> None:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     else:
         config = json.loads((INSTALLER_DIR / "config.template.json").read_text(encoding="utf-8"))
+        if sys.platform != "win32":
+            home = Path.home()
+            if (home / "roms").is_dir():
+                config["roms_dir"] = str(home / "roms")
+            elif (home / "Emulation" / "roms").is_dir():
+                config["roms_dir"] = str(home / "Emulation" / "roms")
+            config["search_roots"] = [
+                "/usr/bin",
+                str(home / ".local" / "bin"),
+                str(home / ".local" / "share" / "flatpak" / "exports" / "bin"),
+                "/var/lib/flatpak/exports/bin",
+                str(home / "Emulation" / "emulators"),
+            ]
     config["avd_name"] = avd_name
     config.setdefault("display", DEFAULT_DISPLAY)
     config.setdefault("emulators", build_emulators_map())

@@ -57,7 +57,15 @@ import sync_library
 import updater
 from bridge_config import ConfigMissingError, load_config
 from launch_bridge import launch_iisu, show_iisu_window
-from portable_sdk import PORTABLE_AVD_HOME, PORTABLE_SDK, ensure_portable_sdk, patch_config_ini, set_quickboot_autosave
+from portable_sdk import (
+    ADB_BIN,
+    EMULATOR_BIN,
+    PORTABLE_AVD_HOME,
+    PORTABLE_SDK,
+    ensure_portable_sdk,
+    patch_config_ini,
+    set_quickboot_autosave,
+)
 
 BRIDGE_SCRIPT = Path(__file__).parent / "launch_bridge.py"
 STATE_PATH = Path(__file__).parent / ".runtime_state.json"
@@ -202,10 +210,16 @@ def find_system_emulator_exe() -> Path | None:
     one-time copy source for bootstrapping the portable copy, actual
     launches always use the portable copy, never this."""
     candidates = [
-        Path(os.environ.get("ANDROID_SDK_ROOT", "")) / "emulator" / "emulator.exe",
-        Path(os.environ.get("ANDROID_HOME", "")) / "emulator" / "emulator.exe",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk" / "emulator" / "emulator.exe",
+        Path(os.environ.get("ANDROID_SDK_ROOT", "")) / "emulator" / EMULATOR_BIN,
+        Path(os.environ.get("ANDROID_HOME", "")) / "emulator" / EMULATOR_BIN,
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk" / "emulator" / EMULATOR_BIN,
+        Path.home() / "Android" / "Sdk" / "emulator" / EMULATOR_BIN,
+        Path.home() / ".android" / "sdk" / "emulator" / EMULATOR_BIN,
+        _PROJECT_ROOT / "installer" / "android-sdk" / "emulator" / EMULATOR_BIN,
     ]
+    which_emu = shutil.which(EMULATOR_BIN)
+    if which_emu:
+        candidates.append(Path(which_emu))
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -314,6 +328,8 @@ def _launch_once(
     compute_boot_fingerprint() in start_avd()'s caller. When it's False,
     the AVD attempts a quickboot resume instead of a full cold boot."""
     args = [str(emulator_exe), "-avd", avd_name, "-gpu", gpu_mode, *build_usb_passthrough_args(usb_passthrough)]
+    if sys.platform != "win32" and Path("/dev/kvm").exists():
+        args += ["-accel", "on"]
     if force_cold_boot:
         args.append("-no-snapshot")
     if debug_console:
@@ -385,7 +401,7 @@ def start_avd(
     a bad/corrupt snapshot shouldn't be able to permanently block
     starting at all."""
     system_emulator_exe = find_system_emulator_exe()
-    if system_emulator_exe is None and not (PORTABLE_SDK / "emulator" / "emulator.exe").is_file():
+    if system_emulator_exe is None and not (PORTABLE_SDK / "emulator" / EMULATOR_BIN).is_file():
         print("[start] Could not find an existing Android Studio emulator install to bootstrap the portable copy from.")
         return None
 
@@ -397,7 +413,7 @@ def start_avd(
         print(f"[start] Failed to set up the portable SDK/AVD copy: {e}")
         return None
 
-    emulator_exe = PORTABLE_SDK / "emulator" / "emulator.exe"
+    emulator_exe = PORTABLE_SDK / "emulator" / EMULATOR_BIN
     avd_dir = PORTABLE_AVD_HOME / f"{avd_name}.avd"
     env = os.environ.copy()
     env.update(env_overrides)

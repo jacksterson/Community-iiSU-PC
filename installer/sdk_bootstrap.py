@@ -20,10 +20,16 @@ search_roots already assumes).
 
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.request
 import zipfile
 from pathlib import Path
+
+try:
+    import shared.platform_compat  # noqa: F401
+except ImportError:
+    pass
 
 SCRIPT_DIR = Path(__file__).parent
 SDK_ROOT = SCRIPT_DIR / "android-sdk"
@@ -32,9 +38,13 @@ SDK_ROOT = SCRIPT_DIR / "android-sdk"
 # runs from the GUI's Setup flow (pythonw.exe, no console of its own), so
 # without CREATE_NO_WINDOW each multi-minute SDK/AVD command below would
 # pop up its own window.
-CREATE_NO_WINDOW = 0x08000000
+IS_WINDOWS = sys.platform == "win32"
 
-COMMANDLINETOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip"
+if IS_WINDOWS:
+    COMMANDLINETOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip"
+else:
+    COMMANDLINETOOLS_URL = "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip"
+
 SYSTEM_IMAGE = "system-images;android-36;google_apis_playstore;x86_64"
 BUILD_TOOLS_VERSION = "34.0.0"
 BUILD_TOOLS = f"build-tools;{BUILD_TOOLS_VERSION}"
@@ -43,21 +53,26 @@ DEVICE_PROFILE = "medium_phone"
 
 
 def zipalign_exe() -> Path:
-    return SDK_ROOT / "build-tools" / BUILD_TOOLS_VERSION / "zipalign.exe"
+    bin_name = "zipalign.exe" if IS_WINDOWS else "zipalign"
+    return SDK_ROOT / "build-tools" / BUILD_TOOLS_VERSION / bin_name
 
 
 def apksigner_bat() -> Path:
-    return SDK_ROOT / "build-tools" / BUILD_TOOLS_VERSION / "apksigner.bat"
+    script_name = "apksigner.bat" if IS_WINDOWS else "apksigner"
+    return SDK_ROOT / "build-tools" / BUILD_TOOLS_VERSION / script_name
 
 
 def android_exe() -> Path:
-    return SDK_ROOT / "cmdline-tools" / "latest" / "bin" / "android.exe"
+    bin_name = "android.exe" if IS_WINDOWS else "android"
+    return SDK_ROOT / "cmdline-tools" / "latest" / "bin" / bin_name
 
 
 def is_sdk_ready() -> bool:
+    adb_name = "adb.exe" if IS_WINDOWS else "adb"
+    emulator_name = "emulator.exe" if IS_WINDOWS else "emulator"
     return (
-        (SDK_ROOT / "platform-tools" / "adb.exe").is_file()
-        and (SDK_ROOT / "emulator" / "emulator.exe").is_file()
+        (SDK_ROOT / "platform-tools" / adb_name).is_file()
+        and (SDK_ROOT / "emulator" / emulator_name).is_file()
         and (SDK_ROOT / SYSTEM_IMAGE.replace(";", "/") / "system.img").is_file()
         and zipalign_exe().is_file()
         and apksigner_bat().is_file()
@@ -110,6 +125,11 @@ def install_commandline_tools() -> None:
     shutil.move(str(extract_dir / "cmdline-tools"), str(latest_dir))
     shutil.rmtree(extract_dir)
 
+    if not IS_WINDOWS:
+        for bin_file in (latest_dir / "bin").glob("*"):
+            if bin_file.is_file():
+                bin_file.chmod(bin_file.stat().st_mode | 0o755)
+
 
 def _package_already_installed(package: str) -> bool:
     if package == SYSTEM_IMAGE:
@@ -153,6 +173,18 @@ def install_packages() -> None:
         # success is checked below by looking for the resulting files
         # rather than trusting the return code.
         _run_with_heartbeat([str(android_exe()), f"--sdk={SDK_ROOT}", "sdk", "install", package], what=package)
+
+    if not IS_WINDOWS:
+        for p in (SDK_ROOT / "platform-tools").glob("*"):
+            if p.is_file():
+                p.chmod(p.stat().st_mode | 0o755)
+        for p in (SDK_ROOT / "emulator").glob("*"):
+            if p.is_file():
+                p.chmod(p.stat().st_mode | 0o755)
+        if zipalign_exe().is_file():
+            zipalign_exe().chmod(zipalign_exe().stat().st_mode | 0o755)
+        if apksigner_bat().is_file():
+            apksigner_bat().chmod(apksigner_bat().stat().st_mode | 0o755)
 
     if not is_sdk_ready():
         raise RuntimeError(

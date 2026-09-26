@@ -436,6 +436,12 @@ def find_executable(names: list[str], search_roots: list[Path], cache: dict) -> 
     if cached and Path(cached).is_file():
         return Path(cached)
 
+    for name in names:
+        found_which = shutil.which(name)
+        if found_which and Path(found_which).is_file():
+            cache["executables"][cache_key] = str(Path(found_which))
+            return Path(found_which)
+
     for root in search_roots:
         if not root.is_dir():
             continue

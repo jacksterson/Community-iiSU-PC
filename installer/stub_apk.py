@@ -52,11 +52,13 @@ REDIRECTOR_ACTIVITY = "com.iisupc.stub.RedirectorActivity"
 
 
 def zipalign_exe() -> Path:
-    return BUILD_TOOLS_DIR / "zipalign.exe"
+    bin_name = "zipalign.exe" if sys.platform == "win32" else "zipalign"
+    return BUILD_TOOLS_DIR / bin_name
 
 
 def apksigner_bat() -> Path:
-    return BUILD_TOOLS_DIR / "apksigner.bat"
+    script_name = "apksigner.bat" if sys.platform == "win32" else "apksigner"
+    return BUILD_TOOLS_DIR / script_name
 
 
 def build_tools_available() -> bool:

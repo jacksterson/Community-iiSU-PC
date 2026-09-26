@@ -41,6 +41,7 @@ automatically), same as RetroArch itself needs to be already installed
 for this to do anything.
 """
 
+import sys
 from collections import Counter
 
 STANDALONE_DEFAULTS = [
@@ -49,7 +50,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sony PlayStation",
         "package": "com.github.stenzek.duckstation",
         "app_label": "DuckStation",
-        "exe_names": ["duckstation-qt-x64-ReleaseLTCG.exe"],
+        "exe_names": ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"],
         "pre_args": ["-fullscreen"],
     },
     {
@@ -57,7 +58,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo GameCube",
         "package": "org.dolphinemu.dolphinemu",
         "app_label": "Dolphin",
-        "exe_names": ["Dolphin.exe", "DolphinQt2.exe"],
+        "exe_names": ["dolphin-emu", "org.DolphinEmu.dolphin-emu", "Dolphin.exe", "DolphinQt2.exe"],
         # Dolphin has no dedicated --fullscreen flag, confirmed live: -b alone
         # leaves it in a normal titled window. -C lets a CLI launch override
         # a config value for just this run without touching the user's saved
@@ -71,7 +72,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo Wii",
         "package": "org.dolphinemu.dolphinemu",
         "app_label": "Dolphin",
-        "exe_names": ["Dolphin.exe", "DolphinQt2.exe"],
+        "exe_names": ["dolphin-emu", "org.DolphinEmu.dolphin-emu", "Dolphin.exe", "DolphinQt2.exe"],
         "pre_args": ["-b", "-C", "Dolphin.Display.Fullscreen=True"],
     },
     {
@@ -79,7 +80,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo Wii U",
         "package": "info.cemu.cemu",
         "app_label": "Cemu",
-        "exe_names": ["Cemu.exe"],
+        "exe_names": ["cemu", "Cemu", "info.cemu.Cemu", "Cemu.exe"],
         # Confirmed live: bare "-f" errors out with a parameter-parse dialog
         # ("the argument '<rom path>' for option '--fullscreen' is invalid"),
         # this Cemu build's -f/--fullscreen always consumes the next
@@ -96,7 +97,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo 3DS",
         "package": "org.citra.citra_emu",
         "app_label": "Citra",
-        "exe_names": ["citra-qt.exe"],
+        "exe_names": ["lime3ds", "citra-qt", "citra", "org.citra_emu.citra", "citra-qt.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -109,7 +110,7 @@ STANDALONE_DEFAULTS = [
         # inherited from Azahar's own Citra ancestry. Both are searched for
         # under this one slot since they're the same PC-side choice from
         # iiSU's perspective, just two forks' different binary names.
-        "exe_names": ["citra-qt.exe", "azahar.exe"],
+        "exe_names": ["azahar", "citra-qt", "citra-qt.exe", "azahar.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -117,7 +118,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sony PlayStation Portable",
         "package": "org.ppsspp.ppsspp",
         "app_label": "PPSSPP",
-        "exe_names": ["PPSSPPWindows64.exe"],
+        "exe_names": ["PPSSPPSDL", "ppsspp", "org.ppsspp.PPSSPP", "PPSSPPWindows64.exe"],
         "pre_args": ["--fullscreen"],
     },
     {
@@ -125,7 +126,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sony PlayStation 2",
         "package": "xyz.aethersx2.android",
         "app_label": "PCSX2",
-        "exe_names": ["pcsx2-qt.exe", "pcsx2.exe"],
+        "exe_names": ["pcsx2-qt", "pcsx2", "net.pcsx2.PCSX2", "pcsx2-qt.exe", "pcsx2.exe"],
         "pre_args": ["-fullscreen"],
     },
     {
@@ -133,7 +134,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo DS",
         "package": "me.magnum.melonds",
         "app_label": "melonDS",
-        "exe_names": ["melonDS.exe"],
+        "exe_names": ["melonDS", "melonds", "net.kuribo64.melonDS", "melonDS.exe"],
         # Confirmed live via -f/--fullscreen (verified with a screenshot,
         # covers the whole screen).
         "pre_args": ["-f"],
@@ -148,7 +149,7 @@ STANDALONE_DEFAULTS = [
         # lookup in launch_bridge.find_emulator_for_package at all.
         "package": "me.magnum.melondualds",
         "app_label": "melonDS",
-        "exe_names": ["melonDS.exe"],
+        "exe_names": ["melonDS", "melonds", "net.kuribo64.melonDS", "melonDS.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -156,7 +157,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sega Dreamcast",
         "package": "com.flycast.emulator",
         "app_label": "Flycast",
-        "exe_names": ["flycast.exe"],
+        "exe_names": ["flycast", "org.flycast.Flycast", "flycast.exe"],
         # Flycast has no dedicated fullscreen CLI flag at all (its --help
         # only lists -config section:key=value and -help), it's a transient
         # override of the same emu.cfg key its own [window] fullscreen
@@ -168,7 +169,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sony PlayStation 3",
         "package": "aenu.aps3e",
         "app_label": "RPCS3",
-        "exe_names": ["rpcs3.exe"],
+        "exe_names": ["rpcs3", "net.rpcs3.RPCS3", "rpcs3.exe"],
         "pre_args": ["--no-gui", "--fullscreen"],
         # RPCS3's actual CLI order is the opposite of every other
         # emulator here: "rpcs3.exe <game_path> --no-gui --fullscreen",
@@ -184,7 +185,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Sony PlayStation Vita",
         "package": "org.vita3k.emulator",
         "app_label": "Vita3K",
-        "exe_names": ["Vita3K.exe"],
+        "exe_names": ["Vita3K", "vita3k", "org.vita3k.Vita3K", "Vita3K.exe"],
         "pre_args": ["-F"],
     },
     {
@@ -199,7 +200,7 @@ STANDALONE_DEFAULTS = [
         # iiSU's own bundled emulator list has no Ryujinx package at all,
         # so iiSU would never report it as the launching package regardless
         # of whether it's installed on the PC side.
-        "exe_names": ["citron.exe"],
+        "exe_names": ["citron", "yuzu", "citron.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -207,7 +208,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo Switch (Citron EA)",
         "package": "org.citron.citron_emu.ea",
         "app_label": "Citron",
-        "exe_names": ["citron.exe"],
+        "exe_names": ["citron", "yuzu", "citron.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -215,7 +216,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo Switch (Yuzu)",
         "package": "org.yuzu.yuzu_emu",
         "app_label": "Citron",
-        "exe_names": ["citron.exe"],
+        "exe_names": ["citron", "yuzu", "citron.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -223,7 +224,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Microsoft Xbox",
         "package": "com.izzy2lost.x1box",
         "app_label": "xemu",
-        "exe_names": ["xemu.exe"],
+        "exe_names": ["xemu", "app.xemu.xemu", "xemu.exe"],
         # xemu doesn't accept a bare trailing ROM path, unlike every other
         # emulator here, it collides with the CD drive xemu.toml already
         # persists from whatever was last loaded, producing "drive with
@@ -256,7 +257,7 @@ STANDALONE_DEFAULTS = [
         # Steam App ID). This entry exists only so a stub gets built and
         # installed for it (see installer/stub_apk.py) and so it shows up
         # in the Emulators settings table at all.
-        "exe_names": ["steam.exe"],
+        "exe_names": ["steam", "steam-runtime", "steam.exe"],
         "pre_args": [],
     },
 ]
@@ -271,13 +272,13 @@ RETROARCH_APP_LABEL = "RetroArch"
 # this is what keeps that launch redirecting somewhere real instead of
 # trying to run a RetroArch that was only ever a stub.
 RETROARCH_SAFETY_NET_EXTENSIONS = {
-    ".cue": ("psx", ["duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
-    ".bin": ("psx", ["duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
-    ".pbp": ("psx", ["duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
-    ".chd": ("psx", ["duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
-    ".m3u": ("psx", ["duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
-    ".cdi": ("dreamcast", ["flycast.exe"], []),
-    ".gdi": ("dreamcast", ["flycast.exe"], []),
+    ".cue": ("psx", ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
+    ".bin": ("psx", ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
+    ".pbp": ("psx", ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
+    ".chd": ("psx", ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
+    ".m3u": ("psx", ["duckstation-qt", "org.duckstation.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe"], ["-fullscreen"]),
+    ".cdi": ("dreamcast", ["flycast", "org.flycast.Flycast", "flycast.exe"], []),
+    ".gdi": ("dreamcast", ["flycast", "org.flycast.Flycast", "flycast.exe"], []),
 }
 
 RETROARCH_BY_EXTENSION = [
@@ -395,10 +396,11 @@ def build_emulators_map() -> dict:
     by_extension = {}
     for ext, (_console, exe_names, pre_args) in RETROARCH_SAFETY_NET_EXTENSIONS.items():
         by_extension[ext] = {"exe_names": exe_names, "pre_args": pre_args}
+    retroarch_exes = ["retroarch", "org.libretro.RetroArch", "retroarch.exe"] if sys.platform != "win32" else ["retroarch.exe"]
     for entry in RETROARCH_BY_EXTENSION:
         for ext in entry["extensions"]:
             by_extension[ext] = {
-                "exe_names": ["retroarch.exe"],
+                "exe_names": retroarch_exes,
                 "pre_args": ["-L", f"cores/{entry['core']}", "-f"],
             }
     emulators[RETROARCH_PACKAGE] = {"by_extension": by_extension}
@@ -426,7 +428,8 @@ def all_emulator_exe_names() -> list[tuple[str, list[str]]]:
     seen = {}
     for entry in STANDALONE_DEFAULTS:
         seen.setdefault(entry["app_label"], entry["exe_names"])
-    seen.setdefault(RETROARCH_APP_LABEL, ["retroarch.exe"])
+    retroarch_exes = ["retroarch", "org.libretro.RetroArch", "retroarch.exe"] if sys.platform != "win32" else ["retroarch.exe"]
+    seen.setdefault(RETROARCH_APP_LABEL, retroarch_exes)
     return list(seen.items())
 
 
