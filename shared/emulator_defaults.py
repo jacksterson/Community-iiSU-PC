@@ -97,7 +97,7 @@ STANDALONE_DEFAULTS = [
         "console_label": "Nintendo 3DS",
         "package": "org.citra.citra_emu",
         "app_label": "Citra",
-        "exe_names": ["lime3ds", "citra-qt", "citra", "org.citra_emu.citra", "citra-qt.exe"],
+        "exe_names": ["lime3ds", "citra-qt", "citra", "org.citra_emu.citra", "io.github.lime3ds.Lime3DS", "citra-qt.exe"],
         "pre_args": ["-f"],
     },
     {
@@ -110,7 +110,7 @@ STANDALONE_DEFAULTS = [
         # inherited from Azahar's own Citra ancestry. Both are searched for
         # under this one slot since they're the same PC-side choice from
         # iiSU's perspective, just two forks' different binary names.
-        "exe_names": ["azahar", "citra-qt", "citra-qt.exe", "azahar.exe"],
+        "exe_names": ["azahar", "citra-qt", "org.azahar_emu.Azahar", "citra-qt.exe", "azahar.exe"],
         "pre_args": ["-f"],
     },
     {

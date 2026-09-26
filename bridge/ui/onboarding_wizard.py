@@ -51,6 +51,7 @@ from launch_bridge import EXECUTABLE_SEARCH_MAX_DEPTH, find_executable
 from shared.emulator_defaults import all_emulator_exe_names, describe_profile
 
 from bridge.ui.dialogs.emulator_dialog import EmulatorDialog
+from bridge.ui.dialogs.emulator_download_dialog import EmulatorDownloadDialog
 from bridge.ui.widgets.card import Card
 from bridge.ui.widgets.display_preview import DisplayPreview
 from bridge.ui.widgets.gradient_divider import GradientDivider
@@ -366,6 +367,10 @@ class EmulatorFoldersStep(QWidget):
         self.scan_button = QPushButton("Scan for installed emulators")
         self.scan_button.clicked.connect(self._start_scan)
         btn_row.addWidget(self.scan_button)
+        self.download_button = QPushButton("Download Emulators...")
+        self.download_button.setObjectName("accent")
+        self.download_button.clicked.connect(self._open_downloader)
+        btn_row.addWidget(self.download_button)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -374,6 +379,12 @@ class EmulatorFoldersStep(QWidget):
         self.status_label.setProperty("role", "dim")
         layout.addWidget(self.status_label)
         layout.addStretch()
+
+    def _open_downloader(self) -> None:
+        dialog = EmulatorDownloadDialog(self, search_roots=self.search_roots())
+        dialog.exec()
+        if dialog.installed_any:
+            self._start_scan()
 
     def search_roots(self) -> list[str]:
         return [self.roots_list.item(i).text() for i in range(self.roots_list.count())]
@@ -466,7 +477,7 @@ class EmulatorFoldersStep(QWidget):
         total = len(self.scan_results)
         lines = [f"Found {len(found_labels)} of {total} known emulators: {', '.join(found_labels) or '(none yet)'}"]
         if missing_labels:
-            lines.append(f"Not found yet: {', '.join(missing_labels)}, install any of these and Community-iiSU-PC will pick them up automatically.")
+            lines.append(f"Not found yet: {', '.join(missing_labels)}. Click 'Download Emulators...' above to install them automatically.")
         self.status_label.setText("\n".join(lines))
         self.status_label.setStyleSheet(f"color: {GREEN};" if found_labels else "")
 
@@ -922,7 +933,7 @@ class OnboardingWizard(QMainWindow):
             return ""
         return (
             f"Still not found: {', '.join(missing)}, games mapped to these won't launch until "
-            "they're installed and you rescan (back on \"Emulator Folders\")."
+            "they're installed (you can download them from \"Emulator Folders\" or Settings > Emulators)."
         )
 
     def _summary_lines(self) -> list[str]:
