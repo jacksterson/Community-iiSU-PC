@@ -218,20 +218,11 @@ def wait_for_avd(avd_name: str, timeout: float, process: subprocess.Popen | None
 
 
 def virtualization_diagnostics() -> dict:
-    """Reports the same virtualization state Task Manager's Performance
-    tab shows for "Virtualization: Enabled/Disabled" (Win32_Processor's
-    VirtualizationFirmwareEnabled, the CPU/BIOS-level VT-x/AMD-V flag),
-    plus whether a hypervisor is actually active right now
-    (Win32_ComputerSystem's HypervisorPresent, true for Hyper-V, WHPX,
-    or any other hypervisor, whichever is actually providing acceleration,
-    not tied to one specific named Windows feature). Deliberately not
-    Get-WindowsOptionalFeature: querying installed features' state
-    requires an elevated PowerShell session, and this needs to work from
-    this project's normal, non-admin install/bridge processes. Both False
-    values default to False rather than raising if the query itself fails
-    for any reason (e.g. WMI unavailable), this is a diagnostic aid for
-    a *different* failure already in progress, not something that should
-    itself become a second failure."""
+    if sys.platform != "win32":
+        import os
+        kvm_ok = Path("/dev/kvm").exists() and os.access("/dev/kvm", os.R_OK | os.W_OK)
+        return {"cpu_virtualization_enabled": kvm_ok, "hypervisor_present": kvm_ok}
+
     result = {"cpu_virtualization_enabled": False, "hypervisor_present": False}
     try:
         cpu_check = subprocess.run(
@@ -479,7 +470,7 @@ def update_iisu(apk_path: Path, on_stage: Callable[[str, int, int], None] | None
 
     env = os.environ.copy()
     env.update(env_overrides)
-    emulator_exe = portable_sdk.PORTABLE_SDK / "emulator" / "emulator.exe"
+    emulator_exe = portable_sdk.PORTABLE_SDK / "emulator" / portable_sdk.EMULATOR_BIN
     boot_avd_and_install(emulator_exe, avd_name, env, patched_apk)
 
     stage(2, "Done")
@@ -667,7 +658,7 @@ def run_setup(apk_path: Path, on_stage: Callable[[str, int, int], None] | None =
     import os
     env = os.environ.copy()
     env.update(env_overrides)
-    emulator_exe = portable_sdk.PORTABLE_SDK / "emulator" / "emulator.exe"
+    emulator_exe = portable_sdk.PORTABLE_SDK / "emulator" / portable_sdk.EMULATOR_BIN
 
     stage(5)
     boot_avd_and_install(emulator_exe, DEFAULT_AVD_NAME, env, patched_apk)
