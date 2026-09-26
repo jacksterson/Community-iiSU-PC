@@ -42,7 +42,9 @@ persistent choice covering every DualSense/DS4 from then on.
 """
 
 import ctypes
+import glob
 import os
+import struct
 import subprocess
 import sys
 import time
@@ -288,12 +290,178 @@ if _xinput is not None:
     _xinput.XInputGetState.restype = ctypes.c_uint32
 
 
-def get_gamepad_state(slot: int) -> XinputGamepad | None:
-    if _xinput is None:
+JS_EVENT_FORMAT = "IhBB"
+JS_EVENT_SIZE = struct.calcsize(JS_EVENT_FORMAT)
+JS_EVENT_BUTTON = 0x01
+JS_EVENT_AXIS = 0x02
+JS_EVENT_INIT = 0x80
+
+
+class LinuxGamepadState:
+    __slots__ = ("wButtons", "bLeftTrigger", "bRightTrigger", "sThumbLX", "sThumbLY", "sThumbRX", "sThumbRY")
+
+    def __init__(self):
+        self.wButtons = 0
+        self.bLeftTrigger = 0
+        self.bRightTrigger = 0
+        self.sThumbLX = 0
+        self.sThumbLY = 0
+        self.sThumbRX = 0
+        self.sThumbRY = 0
+
+
+class LinuxJoystickDevice:
+    def __init__(self, path: str):
+        self.path = path
+        self.fd: int | None = None
+        self.state = LinuxGamepadState()
+        self.buttons: dict[int, bool] = {}
+        self.axes: dict[int, int] = {}
+        self.open()
+
+    def open(self) -> bool:
+        try:
+            self.fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
+            return True
+        except OSError:
+            self.fd = None
+            return False
+
+    def close(self) -> None:
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+
+    def poll(self) -> LinuxGamepadState | None:
+        if self.fd is None:
+            if not self.open():
+                return None
+        try:
+            while True:
+                data = os.read(self.fd, JS_EVENT_SIZE)
+                if not data or len(data) < JS_EVENT_SIZE:
+                    break
+                _time, value, ev_type, number = struct.unpack(JS_EVENT_FORMAT, data)
+                ev_type &= ~JS_EVENT_INIT
+                if ev_type == JS_EVENT_BUTTON:
+                    self.buttons[number] = bool(value)
+                elif ev_type == JS_EVENT_AXIS:
+                    self.axes[number] = value
+        except BlockingIOError:
+            pass
+        except OSError:
+            self.close()
+            return None
+
+        w_buttons = 0
+        if self.buttons.get(0):
+            w_buttons |= XINPUT_GAMEPAD_A
+        if self.buttons.get(1):
+            w_buttons |= XINPUT_GAMEPAD_B
+        if self.buttons.get(2):
+            w_buttons |= XINPUT_GAMEPAD_X
+        if self.buttons.get(3):
+            w_buttons |= XINPUT_GAMEPAD_Y
+        if self.buttons.get(4):
+            w_buttons |= XINPUT_GAMEPAD_LEFT_SHOULDER
+        if self.buttons.get(5):
+            w_buttons |= XINPUT_GAMEPAD_RIGHT_SHOULDER
+        if self.buttons.get(6):
+            w_buttons |= XINPUT_GAMEPAD_BACK
+        if self.buttons.get(7):
+            w_buttons |= XINPUT_GAMEPAD_START
+        if self.buttons.get(9):
+            w_buttons |= XINPUT_GAMEPAD_LEFT_THUMB
+        if self.buttons.get(10):
+            w_buttons |= XINPUT_GAMEPAD_RIGHT_THUMB
+
+        # D-pad on buttons
+        if self.buttons.get(11):
+            w_buttons |= XINPUT_GAMEPAD_DPAD_UP
+        if self.buttons.get(12):
+            w_buttons |= XINPUT_GAMEPAD_DPAD_DOWN
+        if self.buttons.get(13):
+            w_buttons |= XINPUT_GAMEPAD_DPAD_LEFT
+        if self.buttons.get(14):
+            w_buttons |= XINPUT_GAMEPAD_DPAD_RIGHT
+
+        # D-pad on standard hat axes (axes 6 & 7)
+        hat_x = self.axes.get(6, 0)
+        hat_y = self.axes.get(7, 0)
+        if hat_x < -16000:
+            w_buttons |= XINPUT_GAMEPAD_DPAD_LEFT
+        elif hat_x > 16000:
+            w_buttons |= XINPUT_GAMEPAD_DPAD_RIGHT
+        if hat_y < -16000:
+            w_buttons |= XINPUT_GAMEPAD_DPAD_UP
+        elif hat_y > 16000:
+            w_buttons |= XINPUT_GAMEPAD_DPAD_DOWN
+
+        # Sticks: Axis 0=LX, 1=LY (Linux positive Y is down, invert for XInput convention)
+        lx = self.axes.get(0, 0)
+        ly = -self.axes.get(1, 0)
+        rx = self.axes.get(3, 0)
+        ry = -self.axes.get(4, 0)
+
+        # Triggers: Axis 2 (LT) and Axis 5 (RT) on Linux are -32767..32767. Map to 0..255
+        lt_raw = self.axes.get(2, -32768)
+        rt_raw = self.axes.get(5, -32768)
+        lt = max(0, min(255, int((lt_raw + 32768) / 65535 * 255)))
+        rt = max(0, min(255, int((rt_raw + 32768) / 65535 * 255)))
+
+        self.state.wButtons = w_buttons
+        self.state.sThumbLX = lx
+        self.state.sThumbLY = ly
+        self.state.sThumbRX = rx
+        self.state.sThumbRY = ry
+        self.state.bLeftTrigger = lt
+        self.state.bRightTrigger = rt
+        return self.state
+
+
+class _LinuxGamepadManager:
+    def __init__(self):
+        self.devices: dict[int, LinuxJoystickDevice] = {}
+        self.last_scan = 0.0
+
+    def get_pad(self, slot: int) -> LinuxGamepadState | None:
+        now = time.time()
+        if now - self.last_scan > 2.0:
+            self.last_scan = now
+            self._scan()
+        dev = self.devices.get(slot)
+        if dev is None:
+            return None
+        return dev.poll()
+
+    def _scan(self) -> None:
+        paths = sorted(glob.glob("/dev/input/js*"))
+        for slot in range(4):
+            if slot < len(paths):
+                path = paths[slot]
+                if slot not in self.devices or self.devices[slot].path != path:
+                    if slot in self.devices:
+                        self.devices[slot].close()
+                    self.devices[slot] = LinuxJoystickDevice(path)
+            elif slot in self.devices:
+                self.devices[slot].close()
+                del self.devices[slot]
+
+
+_linux_gamepad_mgr = _LinuxGamepadManager() if sys.platform != "win32" else None
+
+
+def get_gamepad_state(slot: int) -> XinputGamepad | LinuxGamepadState | None:
+    if _xinput is not None:
+        state = XinputState()
+        if _xinput.XInputGetState(slot, ctypes.byref(state)) == ERROR_SUCCESS:
+            return state.Gamepad
         return None
-    state = XinputState()
-    if _xinput.XInputGetState(slot, ctypes.byref(state)) == ERROR_SUCCESS:
-        return state.Gamepad
+    elif _linux_gamepad_mgr is not None:
+        return _linux_gamepad_mgr.get_pad(slot)
     return None
 
 
@@ -409,10 +577,13 @@ class ControllerBridge:
         self._sony_controllers_prompted = found
 
     def run(self) -> None:
-        if _xinput is None:
+        if _xinput is None and sys.platform == "win32":
             print("[controller] XInput not available on this system; controller support disabled")
             return
-        print("[controller] watching for Xbox-compatible controllers (wired or Bluetooth)")
+        if sys.platform != "win32":
+            print("[controller] watching for gamepads via Linux /dev/input/js*")
+        else:
+            print("[controller] watching for Xbox-compatible controllers (wired or Bluetooth)")
         if self._quit_chord_mask:
             print(f"[controller] {self._quit_chord_label} on any pad triggers the same action as the keyboard quit hotkey")
         while True:

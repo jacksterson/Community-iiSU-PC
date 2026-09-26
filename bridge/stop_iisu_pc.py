@@ -40,13 +40,16 @@ from pathlib import Path
 # a real embeddable-Python install (see the identical, confirmed-live fix
 # in launch_bridge.py itself).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+try:
+    import shared.platform_compat  # noqa: F401
+except ImportError:
+    pass
 
 from portable_sdk import PORTABLE_AVD_HOME
 
-# adb/taskkill/powershell are all console-subsystem executables; this
-# script itself always runs from the GUI (pythonw.exe), which has no
-# console for them to inherit, so each would otherwise pop up its own.
-CREATE_NO_WINDOW = 0x08000000
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 STATE_PATH = Path(__file__).parent / ".runtime_state.json"
 CONFIG_PATH = Path(__file__).parent / "config.json"

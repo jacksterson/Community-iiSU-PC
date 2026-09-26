@@ -627,6 +627,29 @@ def friendly_emulator_name(executable: Path) -> str:
     return executable.stem
 
 
+def apply_guest_immersion_tweaks() -> None:
+    """Enforces clean, console-like guest settings: hides status/nav bars,
+    disables lockscreen, disables sleep/timeout, speeds up animations, and
+    suppresses notifications/dialogs so the guest feels like a native PC app."""
+    tweaks = (
+        "settings put global policy_control immersive.full=* ; "
+        "locksettings set-disabled true 2>/dev/null ; "
+        "settings put secure lockscreen.disabled 1 ; "
+        "settings put system screen_off_timeout 2147483647 ; "
+        "settings put global stay_on_while_plugged_in 3 ; "
+        "settings put global window_animation_scale 0.5 ; "
+        "settings put global transition_animation_scale 0.5 ; "
+        "settings put global animator_duration_scale 0.5 ; "
+        "settings put secure anr_show_background 0 ; "
+        "settings put global show_mute_in_crash_dialog 1 ; "
+        "settings put global zen_mode 1 ; "
+        "settings put global heads_up_notifications_enabled 0 ; "
+        "settings put system sound_effects_enabled 0 ; "
+        "settings put system haptic_feedback_enabled 0"
+    )
+    subprocess.run(["adb", "shell", tweaks], capture_output=True, creationflags=0x08000000)
+
+
 def launch_iisu(config: dict) -> None:
     """Starts iiSU's own main activity directly via adb, instead of leaving
     the stock Android home screen showing after boot. iiSU declares both
@@ -665,6 +688,8 @@ def launch_iisu(config: dict) -> None:
         if result.stdout.strip() in ("stopped", ""):
             break
         time.sleep(0.5)
+
+    apply_guest_immersion_tweaks()
 
     component = config.get("iisu_component", DEFAULT_IISU_COMPONENT)
     subprocess.run(
@@ -1592,6 +1617,23 @@ def main() -> None:
         config.get("controller_quit_chord"),
     )
     threading.Thread(target=controller_bridge.run, daemon=True).start()
+
+    def _watch_avd_lifetime():
+        time.sleep(30)
+        while True:
+            time.sleep(4)
+            try:
+                res = subprocess.run(
+                    ["adb", "devices"], capture_output=True, text=True,
+                    creationflags=0x08000000, timeout=3
+                )
+                if not any(l.startswith("emulator-") and "device" in l for l in res.stdout.splitlines()):
+                    debug_log("AVD is no longer running; shutting down bridge")
+                    os._exit(0)
+            except Exception:
+                pass
+
+    threading.Thread(target=_watch_avd_lifetime, daemon=True).start()
 
     # Launch iiSU directly rather than leaving the stock Android home
     # screen showing, whether this is a fresh boot or the bridge is being

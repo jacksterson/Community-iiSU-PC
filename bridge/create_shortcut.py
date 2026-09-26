@@ -282,6 +282,7 @@ def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
             f"Path={BRIDGE_DIR}\n"
             f"Icon={icon_path.resolve()}\n"
             "Terminal=false\n"
+            "StartupWMClass=Emulator\n"
             "Categories=Game;Emulator;\n"
         )
         app_menu_file = Path.home() / ".local" / "share" / "applications" / SHORTCUT_NAME

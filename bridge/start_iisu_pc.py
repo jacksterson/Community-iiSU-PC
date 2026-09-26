@@ -56,6 +56,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from bridge.ui import boot_overlay_qt as boot_overlay
 import sync_library
 import updater
+import winapi
 from bridge_config import ConfigMissingError, load_config
 from launch_bridge import launch_iisu, show_iisu_window
 from portable_sdk import (
@@ -461,6 +462,7 @@ def sync_rom_library() -> None:
 
 
 def main() -> None:
+    winapi.ensure_linux_kwin_rules()
     try:
         config = load_config()
     except ConfigMissingError as e:

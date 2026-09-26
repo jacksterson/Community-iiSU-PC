@@ -52,6 +52,77 @@ def _run_kwin_script(code: str, name: str = "iisu_kwin") -> bool:
             pass
 
 
+def ensure_linux_kwin_rules() -> bool:
+    """Configures KDE KWin window rules so the Android emulator maps directly
+    into borderless fullscreen and the auxiliary Emulator toolbar is suppressed
+    automatically from window creation, avoiding any border/toolbar flicker."""
+    if sys.platform == "win32" or not shutil.which("qdbus"):
+        return False
+    from pathlib import Path
+    import uuid
+
+    kwin_rules_path = Path.home() / ".config" / "kwinrulesrc"
+    try:
+        content = kwin_rules_path.read_text(encoding="utf-8") if kwin_rules_path.exists() else ""
+    except Exception:
+        return False
+    if "Community-iiSU-PC Main Window" in content:
+        return True
+
+    main_rule_id = str(uuid.uuid4())
+    toolbar_rule_id = str(uuid.uuid4())
+    main_block = f"""
+[{main_rule_id}]
+Description=Community-iiSU-PC Main Window
+desktop=0
+desktoprule=2
+fullscreen=true
+fullscreenrule=2
+noborder=true
+noborderrule=2
+types=1
+wmclass=Emulator
+wmclassmatch=1
+"""
+    toolbar_block = f"""
+[{toolbar_rule_id}]
+Description=Community-iiSU-PC Toolbar
+minimize=true
+minimizerule=2
+skiptaskbar=true
+skiptaskbarrule=2
+skipswitcher=true
+skipswitcherrule=2
+title=Emulator
+titlematch=1
+types=1
+wmclass=Emulator
+wmclassmatch=1
+"""
+    lines = content.splitlines()
+    existing_rules = []
+    for line in lines:
+        if line.startswith("rules="):
+            existing_rules = [r.strip() for r in line.split("=", 1)[1].split(",") if r.strip()]
+    existing_rules.extend([main_rule_id, toolbar_rule_id])
+
+    new_lines = []
+    for line in lines:
+        if line.startswith("count="):
+            new_lines.append(f"count={len(existing_rules)}")
+        elif line.startswith("rules="):
+            new_lines.append(f"rules={','.join(existing_rules)}")
+        else:
+            new_lines.append(line)
+    new_content = "\n".join(new_lines).rstrip() + "\n" + main_block + toolbar_block + "\n"
+    try:
+        kwin_rules_path.write_text(new_content, encoding="utf-8")
+        subprocess.run(["qdbus", "org.kde.KWin", "/KWin", "reconfigure"], capture_output=True, timeout=2)
+        return True
+    except Exception:
+        return False
+
+
 def _linux_find_window(substring: str) -> int | None:
     if shutil.which("xdotool"):
         try:
@@ -88,6 +159,7 @@ def _linux_find_window(substring: str) -> int | None:
 
 
 def _linux_make_fullscreen(hwnd: int = 0) -> None:
+    ensure_linux_kwin_rules()
     kwin_code = """
     var clients = workspace.windowList();
     for (var i = 0; i < clients.length; i++) {
