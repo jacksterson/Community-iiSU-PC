@@ -22,6 +22,8 @@ own widgets are simply always there to read from directly.
 """
 
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -45,7 +47,7 @@ from PySide6.QtWidgets import (
 import winapi
 from bridge_config import CONFIG_PATH, ConfigMissingError, load_config
 from console_names import load_console_lookup, resolve_console_shortname
-from launch_bridge import find_executable
+from launch_bridge import EXECUTABLE_SEARCH_MAX_DEPTH, find_executable
 from shared.emulator_defaults import all_emulator_exe_names, describe_profile
 
 from bridge.ui.dialogs.emulator_dialog import EmulatorDialog
@@ -399,17 +401,56 @@ class EmulatorFoldersStep(QWidget):
         self._running = True
         self.scan_button.setEnabled(False)
         self.status_label.setStyleSheet("")
-        self.status_label.setText("Scanning. This can take a few seconds for large folders like Program Files...")
-        self._scan_signals = run_in_background(self._run_scan, self._on_scan_finished, roots=roots)
+        self.status_label.setText("Scanning for installed emulators...")
+        self._scan_signals = run_in_background(self._run_scan, self._on_scan_finished, self._on_scan_error, roots=roots)
+
+    def _on_scan_error(self, message: str) -> None:
+        self._running = False
+        self.scan_button.setEnabled(True)
+        self.status_label.setText(f"Scan failed: {message}")
+        self.status_label.setStyleSheet(f"color: {RED};")
 
     def _run_scan(self, roots: list[str]) -> list[tuple[str, bool]]:
-        search_paths = [Path(r) for r in roots]
-        cache: dict = {"executables": {}}
-        results = []
-        for label, exe_names in all_emulator_exe_names():
-            found = find_executable(exe_names, search_paths, cache) is not None
-            results.append((label, found))
-        return results
+        search_paths = [Path(r) for r in roots if Path(r).is_dir()]
+        emulator_list = all_emulator_exe_names()
+        needed_names = {name: label for label, exe_names in emulator_list for name in exe_names}
+        found_labels = set()
+
+        for label, exe_names in emulator_list:
+            for name in exe_names:
+                if shutil.which(name):
+                    found_labels.add(label)
+                    break
+
+        unresolved_names = {
+            name for label, exe_names in emulator_list if label not in found_labels for name in exe_names
+        }
+        if unresolved_names and search_paths:
+            current = list(search_paths)
+            depth = 0
+            while current and depth <= EXECUTABLE_SEARCH_MAX_DEPTH and unresolved_names:
+                next_level = []
+                for directory in current:
+                    try:
+                        entries = list(os.scandir(directory))
+                    except OSError:
+                        continue
+                    for entry in entries:
+                        if entry.name in unresolved_names and entry.is_file():
+                            label = needed_names.get(entry.name)
+                            if label:
+                                found_labels.add(label)
+                                for ex in dict(emulator_list).get(label, []):
+                                    unresolved_names.discard(ex)
+                    for entry in entries:
+                        if entry.is_dir(follow_symlinks=False):
+                            if entry.name in {".git", ".cache", ".var", ".wine", ".steam", "node_modules", "proc", "sys", "dev"}:
+                                continue
+                            next_level.append(Path(entry.path))
+                current = next_level
+                depth += 1
+
+        return [(label, label in found_labels) for label, _ in emulator_list]
 
     def _on_scan_finished(self, results: list[tuple[str, bool]]) -> None:
         self._running = False

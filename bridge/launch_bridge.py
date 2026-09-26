@@ -43,6 +43,7 @@ import os
 import re
 import socket
 import subprocess
+import shutil
 import sys
 import threading
 import traceback
@@ -411,7 +412,9 @@ def _find_by_name(root: Path, names: set[str], max_depth: int) -> Path | None:
                 if entry.name in names and entry.is_file():
                     return Path(entry.path)
             for entry in entries:
-                if entry.is_dir():
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name in {".git", ".cache", ".var", ".wine", ".steam", "node_modules", "proc", "sys", "dev"}:
+                        continue
                     next_level.append(Path(entry.path))
         current = next_level
         depth += 1
