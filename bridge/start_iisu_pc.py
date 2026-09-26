@@ -333,6 +333,7 @@ def _launch_once(
     if sys.platform != "win32" and Path("/dev/kvm").exists():
         args += ["-accel", "on"]
     args.append("-no-boot-anim")
+    args.append("-fixed-scale")
     if force_cold_boot:
         args.append("-no-snapshot")
     if debug_console:
@@ -420,6 +421,12 @@ def start_avd(
     avd_dir = PORTABLE_AVD_HOME / f"{avd_name}.avd"
     env = os.environ.copy()
     env.update(env_overrides)
+    if sys.platform != "win32":
+        env["QT_SCALE_FACTOR"] = "1"
+        env["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+        env["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+        env["QT_SCREEN_SCALE_FACTORS"] = "1"
+        env["QT_FONT_DPI"] = "96"
 
     effective_cold_boot = force_cold_boot
     for attempt in range(1, MAX_LAUNCH_ATTEMPTS + 1):

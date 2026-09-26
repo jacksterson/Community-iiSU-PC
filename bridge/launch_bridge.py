@@ -1635,6 +1635,17 @@ def main() -> None:
 
     threading.Thread(target=_watch_avd_lifetime, daemon=True).start()
 
+    def _toolbar_watcher():
+        time.sleep(2)
+        while True:
+            try:
+                hide_emulator_toolbar()
+            except Exception:
+                pass
+            time.sleep(2)
+
+    threading.Thread(target=_toolbar_watcher, daemon=True).start()
+
     # Launch iiSU directly rather than leaving the stock Android home
     # screen showing, whether this is a fresh boot or the bridge is being
     # restarted against an AVD that's already up.

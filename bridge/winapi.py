@@ -66,20 +66,20 @@ def ensure_linux_kwin_rules() -> bool:
         content = kwin_rules_path.read_text(encoding="utf-8") if kwin_rules_path.exists() else ""
     except Exception:
         return False
-    if "Community-iiSU-PC Main Window" in content:
-        return True
 
     main_rule_id = str(uuid.uuid4())
     toolbar_rule_id = str(uuid.uuid4())
+    toolbar_rule_id2 = str(uuid.uuid4())
+
     main_block = f"""
 [{main_rule_id}]
 Description=Community-iiSU-PC Main Window
-desktop=0
-desktoprule=2
 fullscreen=true
 fullscreenrule=2
 noborder=true
 noborderrule=2
+title=Android Emulator
+titlematch=2
 types=1
 wmclass=Emulator
 wmclassmatch=1
@@ -89,25 +89,62 @@ wmclassmatch=1
 Description=Community-iiSU-PC Toolbar
 minimize=true
 minimizerule=2
+opacityactive=0
+opacityactiverule=2
+opacityinactive=0
+opacityinactiverule=2
 skiptaskbar=true
 skiptaskbarrule=2
 skipswitcher=true
 skipswitcherrule=2
-title=Emulator
+types=4
+typesrule=2
+wmclass=Emulator
+wmclassmatch=1
+
+[{toolbar_rule_id2}]
+Description=Community-iiSU-PC Toolbar Empty Title
+minimize=true
+minimizerule=2
+opacityactive=0
+opacityactiverule=2
+opacityinactive=0
+opacityinactiverule=2
+skiptaskbar=true
+skiptaskbarrule=2
+skipswitcher=true
+skipswitcherrule=2
+title=
 titlematch=1
-types=1
 wmclass=Emulator
 wmclassmatch=1
 """
+    # Remove any previous Community-iiSU-PC rules
     lines = content.splitlines()
-    existing_rules = []
+    clean_lines = []
+    skip_section = False
     for line in lines:
+        if line.strip().startswith("[") and line.strip().endswith("]"):
+            skip_section = False
+        if "Community-iiSU-PC" in line:
+            skip_section = True
+            # remove preceding section header if possible
+            if clean_lines and clean_lines[-1].strip().startswith("[") and clean_lines[-1].strip().endswith("]"):
+                clean_lines.pop()
+            continue
+        if skip_section:
+            continue
+        clean_lines.append(line)
+
+    existing_rules = []
+    for line in clean_lines:
         if line.startswith("rules="):
             existing_rules = [r.strip() for r in line.split("=", 1)[1].split(",") if r.strip()]
-    existing_rules.extend([main_rule_id, toolbar_rule_id])
+    # Remove existing Community-iiSU-PC rule IDs if any
+    existing_rules.extend([main_rule_id, toolbar_rule_id, toolbar_rule_id2])
 
     new_lines = []
-    for line in lines:
+    for line in clean_lines:
         if line.startswith("count="):
             new_lines.append(f"count={len(existing_rules)}")
         elif line.startswith("rules="):
@@ -166,13 +203,17 @@ def _linux_make_fullscreen(hwnd: int = 0) -> None:
         var c = clients[i];
         var cap = (c.caption || '').toLowerCase();
         var cls = (c.resourceClass || '').toLowerCase();
-        if (cap.indexOf('iisuwin') !== -1 || cap.indexOf('android emulator') !== -1 || cls.indexOf('qemu') !== -1 || cls.indexOf('emulator') !== -1) {
-            c.fullScreen = true;
-            c.noBorder = true;
-            workspace.activeWindow = c;
-        }
-        if (c.caption === 'Emulator') {
-            c.minimized = true;
+        if (cls === 'emulator' || cls.indexOf('qemu') !== -1) {
+            if (c.normalWindow && (cap.indexOf('iisuwin') !== -1 || cap.indexOf('android emulator') !== -1)) {
+                c.fullScreen = true;
+                c.noBorder = true;
+                workspace.activeWindow = c;
+            } else {
+                c.minimized = true;
+                c.skipTaskbar = true;
+                c.skipSwitcher = true;
+                c.opacity = 0;
+            }
         }
     }
     """
@@ -188,9 +229,10 @@ def _linux_make_fullscreen(hwnd: int = 0) -> None:
                         if win_id:
                             subprocess.run(["xdotool", "windowactivate", win_id], capture_output=True, timeout=1)
                             subprocess.run(["xdotool", "windowstate", "--add", "FULLSCREEN", win_id], capture_output=True, timeout=1)
-                            subprocess.run(["xdotool", "key", "--window", win_id, "F11"], capture_output=True, timeout=1)
         except Exception:
             pass
+
+    _linux_hide_emulator_toolbar()
 
     try:
         subprocess.run(
@@ -232,8 +274,15 @@ def _linux_hide_emulator_toolbar() -> None:
     var clients = workspace.windowList();
     for (var i = 0; i < clients.length; i++) {
         var c = clients[i];
-        if (c.caption === 'Emulator') {
-            c.minimized = true;
+        var cap = (c.caption || '').toLowerCase();
+        var cls = (c.resourceClass || '').toLowerCase();
+        if (cls === 'emulator' || cls.indexOf('qemu') !== -1) {
+            if (!c.normalWindow || cap.indexOf('android emulator') === -1) {
+                c.minimized = true;
+                c.skipTaskbar = true;
+                c.skipSwitcher = true;
+                c.opacity = 0;
+            }
         }
     }
     """
@@ -241,7 +290,17 @@ def _linux_hide_emulator_toolbar() -> None:
 
     if shutil.which("xdotool"):
         try:
-            subprocess.run(["xdotool", "search", "--name", "^Emulator$", "windowminimize", "%@"], capture_output=True, timeout=1)
+            res = subprocess.run(["xdotool", "search", "--class", "Emulator"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0 and res.stdout.strip():
+                for wid in res.stdout.splitlines():
+                    wid = wid.strip()
+                    if not wid:
+                        continue
+                    name_res = subprocess.run(["xdotool", "getwindowname", wid], capture_output=True, text=True, timeout=1)
+                    name = name_res.stdout.strip()
+                    if "Android Emulator" not in name and "iisuwin" not in name:
+                        subprocess.run(["xdotool", "windowunmap", wid], capture_output=True, timeout=1)
+                        subprocess.run(["xdotool", "windowminimize", wid], capture_output=True, timeout=1)
         except Exception:
             pass
 
