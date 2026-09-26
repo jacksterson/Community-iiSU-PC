@@ -222,6 +222,11 @@ def _create_manager_desktop_file(icon_path: Path) -> Path:
     shortcut_path = desktop_dir() / MANAGER_SHORTCUT_NAME
     shortcut_path.write_text(desktop_file_content, encoding="utf-8")
     shortcut_path.chmod(0o755)
+    if shutil.which("gio"):
+        try:
+            subprocess.run(["gio", "set", str(shortcut_path), "metadata::trusted", "true"], capture_output=True)
+        except Exception:
+            pass
     return shortcut_path
 
 
@@ -286,6 +291,11 @@ def create_desktop_shortcut(apk_path: Path | None = None) -> Path:
 
         shortcut_path.write_text(desktop_file_content, encoding="utf-8")
         shortcut_path.chmod(0o755)
+        if shutil.which("gio"):
+            try:
+                subprocess.run(["gio", "set", str(shortcut_path), "metadata::trusted", "true"], capture_output=True)
+            except Exception:
+                pass
         _refresh_shell_icon_cache()
         return shortcut_path
 

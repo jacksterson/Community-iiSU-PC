@@ -579,6 +579,8 @@ def _run_start_sequence(config: dict, avd_name: str, port: int, debug_console: b
             print(f"[start] Bridge didn't come up in time, check {BRIDGE_LOG_PATH.name} for errors.")
 
     save_state(state)
+    if config.get("iisu_fullscreen"):
+        show_iisu_window(config)
     print("[start] Ready. Launching a game in iiSU will now hand off to the real PC emulator.")
 
 

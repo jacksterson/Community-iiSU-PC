@@ -10,7 +10,10 @@ properly here is what actually makes this work.
 
 import ctypes
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 from ctypes import wintypes
 
@@ -20,6 +23,155 @@ except ImportError:
     pass
 
 IS_WINDOWS = sys.platform == "win32" and hasattr(ctypes, "windll")
+
+
+def _run_kwin_script(code: str, name: str = "iisu_kwin") -> bool:
+    if sys.platform == "win32" or not shutil.which("qdbus"):
+        return False
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(code)
+        fpath = f.name
+    try:
+        res = subprocess.run(
+            ["qdbus", "org.kde.KWin", "/Scripting", "loadScript", fpath, name],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if res.returncode != 0:
+            return False
+        subprocess.run(["qdbus", "org.kde.KWin", "/Scripting", "start"], capture_output=True, timeout=2)
+        subprocess.run(["qdbus", "org.kde.KWin", "/Scripting", "unloadScript", name], capture_output=True, timeout=2)
+        return True
+    except Exception:
+        return False
+    finally:
+        try:
+            os.unlink(fpath)
+        except Exception:
+            pass
+
+
+def _linux_find_window(substring: str) -> int | None:
+    if shutil.which("xdotool"):
+        try:
+            for term in (substring, "Android Emulator", "iisuwin", "qemu"):
+                res = subprocess.run(
+                    ["xdotool", "search", "--onlyvisible", "--name", term],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
+                    if lines:
+                        return int(lines[0])
+        except Exception:
+            pass
+
+    if shutil.which("qdbus"):
+        try:
+            res = subprocess.run(["qdbus", "org.kde.KWin", "/KWin", "org.kde.KWin.supportInformation"], capture_output=True, timeout=2)
+            if res.returncode == 0:
+                return 1
+        except Exception:
+            pass
+
+    try:
+        res = subprocess.run(["pgrep", "-f", "qemu-system|emulator"], capture_output=True, text=True, timeout=1)
+        if res.returncode == 0 and res.stdout.strip():
+            return int(res.stdout.splitlines()[0])
+    except Exception:
+        pass
+
+    return None
+
+
+def _linux_make_fullscreen(hwnd: int = 0) -> None:
+    kwin_code = """
+    var clients = workspace.windowList();
+    for (var i = 0; i < clients.length; i++) {
+        var c = clients[i];
+        var cap = (c.caption || '').toLowerCase();
+        var cls = (c.resourceClass || '').toLowerCase();
+        if (cap.indexOf('iisuwin') !== -1 || cap.indexOf('android emulator') !== -1 || cls.indexOf('qemu') !== -1 || cls.indexOf('emulator') !== -1) {
+            c.fullScreen = true;
+            c.noBorder = true;
+            workspace.activeWindow = c;
+        }
+        if (c.caption === 'Emulator') {
+            c.minimized = true;
+        }
+    }
+    """
+    _run_kwin_script(kwin_code, "iisu_make_fullscreen")
+
+    if shutil.which("xdotool"):
+        try:
+            for term in ("iisuwin", "Android Emulator"):
+                res = subprocess.run(["xdotool", "search", "--name", term], capture_output=True, text=True, timeout=2)
+                if res.returncode == 0 and res.stdout.strip():
+                    for win_id in res.stdout.splitlines():
+                        win_id = win_id.strip()
+                        if win_id:
+                            subprocess.run(["xdotool", "windowactivate", win_id], capture_output=True, timeout=1)
+                            subprocess.run(["xdotool", "windowstate", "--add", "FULLSCREEN", win_id], capture_output=True, timeout=1)
+                            subprocess.run(["xdotool", "key", "--window", win_id, "F11"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+
+    try:
+        subprocess.run(
+            ["adb", "shell", "settings", "put", "global", "policy_control", "immersive.full=*"],
+            capture_output=True,
+            timeout=3,
+        )
+    except Exception:
+        pass
+
+
+def _linux_force_foreground(hwnd: int = 0) -> None:
+    kwin_code = """
+    var clients = workspace.windowList();
+    for (var i = 0; i < clients.length; i++) {
+        var c = clients[i];
+        var cap = (c.caption || '').toLowerCase();
+        var cls = (c.resourceClass || '').toLowerCase();
+        if (cap.indexOf('iisuwin') !== -1 || cap.indexOf('android emulator') !== -1 || cls.indexOf('qemu') !== -1 || cls.indexOf('emulator') !== -1) {
+            workspace.activeWindow = c;
+        }
+    }
+    """
+    _run_kwin_script(kwin_code, "iisu_force_foreground")
+
+    if shutil.which("xdotool"):
+        try:
+            if hwnd > 1:
+                subprocess.run(["xdotool", "windowactivate", str(hwnd)], capture_output=True, timeout=1)
+            else:
+                for term in ("iisuwin", "Android Emulator"):
+                    subprocess.run(["xdotool", "search", "--name", term, "windowactivate", "%@"], capture_output=True, timeout=1)
+        except Exception:
+            pass
+
+
+def _linux_hide_emulator_toolbar() -> None:
+    kwin_code = """
+    var clients = workspace.windowList();
+    for (var i = 0; i < clients.length; i++) {
+        var c = clients[i];
+        if (c.caption === 'Emulator') {
+            c.minimized = true;
+        }
+    }
+    """
+    _run_kwin_script(kwin_code, "iisu_hide_toolbar")
+
+    if shutil.which("xdotool"):
+        try:
+            subprocess.run(["xdotool", "search", "--name", "^Emulator$", "windowminimize", "%@"], capture_output=True, timeout=1)
+        except Exception:
+            pass
 
 if IS_WINDOWS:
     user32 = ctypes.windll.user32
@@ -355,6 +507,9 @@ def wait_for_visible_window_by_pid(
 
 
 def find_window_by_title(substring: str) -> int | None:
+    if not IS_WINDOWS:
+        return _linux_find_window(substring)
+
     def matches(hwnd):
         return user32.IsWindowVisible(hwnd) and substring.lower() in _window_title(hwnd).lower()
 
@@ -362,6 +517,9 @@ def find_window_by_title(substring: str) -> int | None:
 
 
 def find_window_by_exact_title(title: str) -> int | None:
+    if not IS_WINDOWS:
+        return _linux_find_window(title)
+
     def matches(hwnd):
         return user32.IsWindowVisible(hwnd) and _window_title(hwnd) == title
 
@@ -374,6 +532,10 @@ def hide_emulator_toolbar() -> None:
     docked at the edge of the main device window, not a panel inside it,
     and not something exposed via any emulator command-line flag or config.
     Since it's its own window, we can just hide it directly."""
+    if not IS_WINDOWS:
+        _linux_hide_emulator_toolbar()
+        return
+
     hwnd = find_window_by_exact_title("Emulator")
     if hwnd is not None:
         user32.ShowWindow(hwnd, SW_HIDE)
@@ -437,6 +599,10 @@ def get_primary_monitor_mode() -> tuple[int, int, int]:
 def force_foreground(hwnd: int, show_state: int = SW_RESTORE) -> None:
     """Windows normally blocks background processes from stealing focus;
     this uses the standard AttachThreadInput workaround to get around that."""
+    if not IS_WINDOWS:
+        _linux_force_foreground(hwnd)
+        return
+
     current_thread_id = kernel32.GetCurrentThreadId()
     target_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
     user32.AttachThreadInput(target_thread_id, current_thread_id, True)
@@ -451,6 +617,9 @@ def nudge_focus_with_click(hwnd: int) -> None:
     like DuckStation track actual keyboard/controller input focus on their
     render widget separately, which only picks it up on a real click. This
     synthesizes that click at the window's center (moves the real cursor)."""
+    if not IS_WINDOWS:
+        return
+
     rect = wintypes.RECT()
     if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
         return
@@ -468,6 +637,10 @@ def make_fullscreen(hwnd: int) -> None:
     resizing via SetWindowPos still leaves the title bar/border eating into
     the screen. This strips the caption/border styles first, then resizes
     to the full screen, the standard "borderless fullscreen" technique."""
+    if not IS_WINDOWS:
+        _linux_make_fullscreen(hwnd)
+        return
+
     style = user32.GetWindowLongPtrW(hwnd, GWL_STYLE)
     user32.SetWindowLongPtrW(hwnd, GWL_STYLE, style & ~WS_BORDERLESS_MASK)
 
