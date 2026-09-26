@@ -396,6 +396,15 @@ def boot_avd_and_install(emulator_exe: Path, avd_name: str, env: dict, patched_a
     if result.returncode != 0 or "Success" not in result.stdout:
         raise RuntimeError(f"adb install failed:\n{result.stdout}\n{result.stderr}")
 
+    subprocess.run(
+        ["adb", "shell", "cmd", "package", "set-home-activity", "com.iisulauncher/.launcher.StartupSafeModeActivity"],
+        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+    )
+    subprocess.run(
+        ["adb", "shell", "pm", "disable-user", "com.google.android.apps.nexuslauncher"],
+        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW,
+    )
+
     install_default_redirectors()
 
     print("[setup] shutting the AVD back down (Community-iiSU-PC Manager.bat will bring it up properly from here on)...")

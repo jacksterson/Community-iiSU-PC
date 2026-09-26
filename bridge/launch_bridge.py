@@ -277,13 +277,22 @@ def _adb_media_volume_get() -> int | None:
     """Read Android's MUSIC stream volume (stream 3) without showing a console."""
     try:
         result = subprocess.run(
-            ["adb", "shell", "media", "volume", "--stream", "3", "--get"],
+            ["adb", "shell", "cmd", "media_session", "volume", "--stream", "3", "--get"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             creationflags=0x08000000,  # CREATE_NO_WINDOW
             timeout=3,
         )
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["adb", "shell", "media", "volume", "--stream", "3", "--get"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                creationflags=0x08000000,
+                timeout=3,
+            )
     except (OSError, subprocess.SubprocessError):
         return None
     # Typical Android output: "volume is 7 in range [0..15]"
@@ -294,10 +303,19 @@ def _adb_media_volume_get() -> int | None:
 def _adb_media_volume_set(volume: int) -> bool:
     try:
         result = subprocess.run(
-            ["adb", "shell", "media", "volume", "--stream", "3", "--set", str(max(0, volume))],
+            ["adb", "shell", "cmd", "media_session", "volume", "--stream", "3", "--set", str(max(0, volume))],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=0x08000000,  # CREATE_NO_WINDOW
+            timeout=3,
+        )
+        if result.returncode == 0:
+            return True
+        result = subprocess.run(
+            ["adb", "shell", "media", "volume", "--stream", "3", "--set", str(max(0, volume))],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=0x08000000,
             timeout=3,
         )
         return result.returncode == 0
@@ -644,11 +662,20 @@ def launch_iisu(config: dict) -> None:
             ["adb", "shell", "getprop", "init.svc.bootanim"], capture_output=True, text=True,
             creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
-        if result.stdout.strip() == "stopped":
+        if result.stdout.strip() in ("stopped", ""):
             break
-        time.sleep(1)
+        time.sleep(0.5)
 
     component = config.get("iisu_component", DEFAULT_IISU_COMPONENT)
+    subprocess.run(
+        ["adb", "shell", "cmd", "package", "set-home-activity", component],
+        capture_output=True, text=True, creationflags=0x08000000,
+    )
+    subprocess.run(
+        ["adb", "shell", "pm", "disable-user", "com.google.android.apps.nexuslauncher"],
+        capture_output=True, text=True, creationflags=0x08000000,
+    )
+
     result = None
     for _ in range(60):
         result = subprocess.run(
@@ -665,18 +692,12 @@ def launch_iisu(config: dict) -> None:
 
 
 def set_volume_max() -> None:
-    """A fresh boot comes up at whatever media volume level the system
-    image defaults to (usually well below max), silent enough that
-    anything iiSU itself plays (UI sounds, trailers) needs a manual
-    volume raise inside the VM on every single boot otherwise. Repeated
-    VOLUME_UP keyevents clamp at the device's actual max regardless of
-    AOSP vs OEM MAX_VOLUME differences, so this doesn't need to know the
-    exact volume index, one `adb shell input keyevent` call with the
-    keycode repeated is enough, no need for 20 separate subprocess calls."""
-    subprocess.run(
-        ["adb", "shell", "input", "keyevent"] + ["24"] * 20, capture_output=True, text=True,
-        creationflags=0x08000000,  # CREATE_NO_WINDOW
-    )
+    """Sets Android MUSIC stream volume to maximum (15)."""
+    if not _adb_media_volume_set(15):
+        subprocess.run(
+            ["adb", "shell", "input", "keyevent", "24"], capture_output=True, text=True,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
+        )
 
 
 def show_iisu_window(config: dict) -> None:
@@ -1088,7 +1109,7 @@ def launch_windows_app(app_name: str, config: dict) -> bool:
     begin_game_handoff()
 
     existing_windows = list_visible_windows()
-    show_overlay = config.get("show_boot_overlay", True) and not config.get("debug_show_console_windows", False)
+    show_overlay = config.get("show_boot_overlay", False) and not config.get("debug_show_console_windows", False)
     overlay = boot_overlay.show(f"Waiting on {app_name}...") if show_overlay else None
     process = None
     hwnd = None
@@ -1214,7 +1235,7 @@ def launch_steam_game(app_id: str, config: dict) -> None:
     begin_game_handoff()
 
     existing_windows = list_visible_windows()
-    show_overlay = config.get("show_boot_overlay", True) and not config.get("debug_show_console_windows", False)
+    show_overlay = config.get("show_boot_overlay", False) and not config.get("debug_show_console_windows", False)
     overlay = boot_overlay.show(f"Waiting on Steam app {app_id}...") if show_overlay else None
     hwnd = None
 
@@ -1431,7 +1452,7 @@ def handle_request(raw_intent: str) -> None:
     # it, that moment shows raw desktop. Skipped when debug_show_console_
     # windows is on, since a fullscreen overlay would just hide the
     # console windows that setting exists to show.
-    show_overlay = config.get("show_boot_overlay", True) and not config.get("debug_show_console_windows", False)
+    show_overlay = config.get("show_boot_overlay", False) and not config.get("debug_show_console_windows", False)
     overlay = boot_overlay.show(f"Waiting on {friendly_emulator_name(executable)}...") if show_overlay else None
     try:
         iisu_hwnd = find_window_by_title(config["iisu_window_title"])

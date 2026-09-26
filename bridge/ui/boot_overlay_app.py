@@ -148,60 +148,65 @@ class OverlayWindow(QWidget):
         super().__init__()
         theme = _THEMES[_detect_windows_theme()]
 
-        # Tool: hides it from the taskbar/Alt-Tab, you shouldn't be able
-        # to switch *to* a loading overlay, only have it appear over you.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
         )
-        self.setCursor(Qt.CursorShape.BlankCursor)
-        # Belt-and-suspenders against a default white flash before the
-        # animated background's first paintEvent fires. An ID selector
-        # (not a bare type/property rule) so this doesn't cascade onto
-        # every child QLabel and paint each one an opaque box, Qt
-        # stylesheets otherwise inherit down the widget tree like CSS.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("overlayRoot")
-        self.setStyleSheet(f"#overlayRoot {{ background-color: {theme['bg'].name()}; }}")
+        self.setStyleSheet("#overlayRoot { background: transparent; }")
 
         screen = QGuiApplication.primaryScreen()
-        self.setGeometry(screen.geometry())
+        screen_geo = screen.geometry() if screen else None
 
-        background = _AnimatedBackground(theme, self)
-        background.setGeometry(self.rect())
+        card_width = 520
+        card_height = 240
+        self.resize(card_width, card_height)
+        if screen_geo:
+            self.move(
+                screen_geo.x() + (screen_geo.width() - card_width) // 2,
+                screen_geo.y() + (screen_geo.height() - card_height) // 2,
+            )
 
-        layout = QVBoxLayout(self)
+        card = QWidget(self)
+        card.setObjectName("overlayCard")
+        card_bg = "rgba(18, 18, 24, 235)" if _detect_windows_theme() == "dark" else "rgba(245, 245, 250, 235)"
+        card_border = "rgba(255, 255, 255, 35)" if _detect_windows_theme() == "dark" else "rgba(0, 0, 0, 35)"
+        card.setStyleSheet(f"""
+            #overlayCard {{
+                background-color: {card_bg};
+                border: 1px solid {card_border};
+                border-radius: 20px;
+            }}
+        """)
+        card.setGeometry(0, 0, card_width, card_height)
+
+        layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(18)
-        layout.setContentsMargins(48, 48, 48, 48)
+        layout.setSpacing(14)
+        layout.setContentsMargins(36, 28, 36, 28)
 
-        # Bahnschrift SemiBold (bundled with Windows 10+), not this
-        # project's usual Segoe UI, a blockier, more technical/console-ish
-        # face echoing iiSU's own branding without using any of iiSU's
-        # actual (copyrighted, not ours to include) font files.
         self._title = QLabel(self._TITLE_TEXT)
-        self._title.setFont(QFont("Bahnschrift SemiBold", 32))
-        self._title.setStyleSheet(f"color: {theme['title'].name()};")
+        self._title.setFont(QFont("Bahnschrift SemiBold", 24))
+        self._title.setStyleSheet(f"color: {theme['title'].name()}; background: transparent;")
         self._title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._title)
 
         context_label = QLabel(context)
-        context_label.setFont(QFont("Segoe UI Semibold", 14))
-        context_label.setStyleSheet(f"color: {theme['context'].name()};")
+        context_label.setFont(QFont("Segoe UI Semibold", 13))
+        context_label.setStyleSheet(f"color: {theme['context'].name()}; background: transparent;")
         context_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(context_label)
 
         layout.addWidget(_BounceBar(theme, self), alignment=Qt.AlignmentFlag.AlignCenter)
 
-        flavor_font = QFont("Segoe UI", 10)
+        flavor_font = QFont("Segoe UI", 9)
         flavor_font.setItalic(True)
         flavor_label = QLabel(flavor)
         flavor_label.setFont(flavor_font)
-        flavor_label.setStyleSheet(f"color: {theme['flavor'].name()};")
+        flavor_label.setStyleSheet(f"color: {theme['flavor'].name()}; background: transparent;")
         flavor_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(flavor_label)
 
-        # Cycles 0..3 dots on a fixed-length string (padded with trailing
-        # spaces) so the label's width, and therefore its centering,
-        # never jitters as the dot count changes.
         self._dot_count = 0
         self._dot_timer = QTimer(self)
         self._dot_timer.timeout.connect(self._tick_dots)
@@ -212,11 +217,6 @@ class OverlayWindow(QWidget):
         dots = "." * self._dot_count
         padding = " " * (3 - self._dot_count)
         self._title.setText(f"{self._TITLE_TEXT}{dots}{padding}")
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        for child in self.findChildren(_AnimatedBackground):
-            child.setGeometry(self.rect())
 
 
 def main() -> None:

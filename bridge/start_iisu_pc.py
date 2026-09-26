@@ -331,6 +331,7 @@ def _launch_once(
     args = [str(emulator_exe), "-avd", avd_name, "-gpu", gpu_mode, *build_usb_passthrough_args(usb_passthrough)]
     if sys.platform != "win32" and Path("/dev/kvm").exists():
         args += ["-accel", "on"]
+    args.append("-no-boot-anim")
     if force_cold_boot:
         args.append("-no-snapshot")
     if debug_console:
@@ -488,7 +489,7 @@ def main() -> None:
     # setting exists to show).
     show_overlay = (
         not is_avd_running(avd_name)
-        and config.get("show_boot_overlay", True)
+        and config.get("show_boot_overlay", False)
         and not debug_console
     )
     overlay = boot_overlay.show("Booting Community-iiSU-PC, please wait...") if show_overlay else None
@@ -551,7 +552,7 @@ def _run_start_sequence(config: dict, avd_name: str, port: int, debug_console: b
             bridge_log_file = open(BRIDGE_LOG_PATH, "wb")
             try:
                 bridge_process = subprocess.Popen(
-                    [sys.executable, str(BRIDGE_SCRIPT)],
+                    [sys.executable, "-u", str(BRIDGE_SCRIPT)],
                     creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
                     stdin=subprocess.DEVNULL,
                     stdout=bridge_log_file,
